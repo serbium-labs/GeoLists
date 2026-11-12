@@ -2,6 +2,7 @@ import { MAP_SOURCES } from '../config/mapSources'
 import type { MapList, MapPoint } from '../types/data'
 import type { MapSourceMode } from '../types/map'
 import { formatCoordinates } from '../utils/coordinates'
+import { MapUpdates } from './MapUpdates'
 
 interface Props {
   mode: MapSourceMode
@@ -49,6 +50,6 @@ export function Sidebar(props: Props) {
 
     <section className="sidebar-section source-section"><h2>Источник карты</h2><div className="source-switch" role="radiogroup" aria-label="Источник карты">
       {(Object.keys(MAP_SOURCES) as MapSourceMode[]).map((sourceMode) => <button key={sourceMode} type="button" role="radio" aria-checked={mode === sourceMode} className={mode === sourceMode ? 'active' : ''} onClick={() => props.onModeChange(sourceMode)}>{MAP_SOURCES[sourceMode].label}</button>)}
-    </div></section>
+    </div><MapUpdates /></section>
   </aside>
 }

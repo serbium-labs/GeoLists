@@ -5,11 +5,12 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { getMapStyle, hasLocalArchive } from '../config/mapSources'
+import { versionMapLibreWorkerUrl } from '../config/mapWorker'
 import type { MapPoint } from '../types/data'
 import type { Coordinates, MapSourceMode } from '../types/map'
 
 const SPB_CENTER: [number, number] = [30.3351, 59.9343]
-maplibregl.setWorkerUrl(maplibreWorkerUrl)
+maplibregl.setWorkerUrl(versionMapLibreWorkerUrl(maplibreWorkerUrl))
 const EMPTY_STYLE = { version: 8 as const, sources: {}, layers: [{ id: 'unavailable', type: 'background' as const, paint: { 'background-color': '#e5e9e4' } }] }
 
 interface Props {
@@ -30,7 +31,7 @@ export function MapView({ mode, points, activeListId, focusedPoint, onMapClick, 
   const onPointOpenRef = useRef(onPointOpen)
   const pointsRef = useRef(points)
   const activeListIdRef = useRef(activeListId)
-  const appliedModeRef = useRef<MapSourceMode>('online')
+  const appliedModeRef = useRef<MapSourceMode | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => { onMapClickRef.current = onMapClick }, [onMapClick])
@@ -45,7 +46,7 @@ export function MapView({ mode, points, activeListId, focusedPoint, onMapClick, 
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
-    const map = new maplibregl.Map({ container: containerRef.current, style: getMapStyle('online'), center: SPB_CENTER, zoom: 11, attributionControl: { compact: true }, locale: { 'NavigationControl.ZoomIn': 'Увеличить масштаб', 'NavigationControl.ZoomOut': 'Уменьшить масштаб', 'NavigationControl.ResetBearing': 'Сбросить поворот' } })
+    const map = new maplibregl.Map({ container: containerRef.current, style: EMPTY_STYLE, center: SPB_CENTER, zoom: 11, attributionControl: { compact: true }, locale: { 'NavigationControl.ZoomIn': 'Увеличить масштаб', 'NavigationControl.ZoomOut': 'Уменьшить масштаб', 'NavigationControl.ResetBearing': 'Сбросить поворот' } })
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right')
     map.on('click', (event) => {
       if (activeListIdRef.current) onMapClickRef.current({ longitude: event.lngLat.lng, latitude: event.lngLat.lat })

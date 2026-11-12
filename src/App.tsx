@@ -14,7 +14,8 @@ function messageFrom(error: unknown) {
 }
 
 export default function App() {
-  const [mode, setMode] = useState<MapSourceMode>('online')
+  const [mode, setModeState] = useState<MapSourceMode>(() => localStorage.getItem('geolists.mapMode') === 'local' ? 'local' : 'online')
+  const setMode = (next: MapSourceMode) => { localStorage.setItem('geolists.mapMode', next); setModeState(next) }
   const [lists, setLists] = useState<MapList[]>([])
   const [points, setPoints] = useState<MapPoint[]>([])
   const [pointCounts, setPointCounts] = useState<Record<string, number>>({})

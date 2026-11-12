@@ -46,6 +46,14 @@ button, input, textarea { font: inherit; }
 .source-switch { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 9px; background: #e8ece8; }
 .source-switch button { padding: 8px; border: 0; border-radius: 7px; color: #647169; background: transparent; cursor: pointer; font-size: 12px; }
 .source-switch button.active { color: #155b40; background: white; box-shadow: 0 1px 5px rgb(23 48 36 / 10%); font-weight: 650; }
+.map-updates { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; color: #68766e; font-size: 11px; }
+.map-updates p { margin: 0; }
+.map-updates progress { width: 100%; accent-color: #1c6d4e; }
+.map-update-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.map-update-actions button { padding: 7px; border: 1px solid #d1dad3; border-radius: 6px; color: #43534b; background: white; cursor: pointer; font-size: 11px; }
+.map-update-actions button:disabled { cursor: default; opacity: .45; }
+.map-update-note { color: #7c8981; font-size: 11px; line-height: 1.4; }
+.map-update-success { color: #176243; }
 .point-section { margin-top: auto; }
 .point-placeholder { margin: 0; color: #7c8981; font-size: 12px; line-height: 1.55; }
 .coordinates { margin: 0; }
