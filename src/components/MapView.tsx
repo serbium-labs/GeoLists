@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import { Marker, NavigationControl, type Map as MapLibreMap } from 'maplibre-gl'
-import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { getMapStyle, hasLocalArchive } from '../config/mapSources'
+import { getMapStyle, inspectLocalArchive, localArchiveErrorMessage } from '../config/mapSources'
 import { versionMapLibreWorkerUrl } from '../config/mapWorker'
 import type { MapPoint } from '../types/data'
 import type { Coordinates, MapSourceMode } from '../types/map'
@@ -15,6 +15,7 @@ const EMPTY_STYLE = { version: 8 as const, sources: {}, layers: [{ id: 'unavaila
 
 interface Props {
   mode: MapSourceMode
+  mapRevision: string
   points: MapPoint[]
   activeListId: string | null
   focusedPoint: MapPoint | null
@@ -23,7 +24,7 @@ interface Props {
   onRequestOnline: () => void
 }
 
-export function MapView({ mode, points, activeListId, focusedPoint, onMapClick, onPointOpen, onRequestOnline }: Props) {
+export function MapView({ mode, mapRevision, points, activeListId, focusedPoint, onMapClick, onPointOpen, onRequestOnline }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const markersRef = useRef(new Map<string, Marker>())
@@ -32,7 +33,10 @@ export function MapView({ mode, points, activeListId, focusedPoint, onMapClick, 
   const pointsRef = useRef(points)
   const activeListIdRef = useRef(activeListId)
   const appliedModeRef = useRef<MapSourceMode | null>(null)
+  const appliedRevisionRef = useRef('')
+  const requestedModeRef = useRef(mode)
   const [error, setError] = useState<string | null>(null)
+  const [loadingMap, setLoadingMap] = useState(true)
 
   useEffect(() => { onMapClickRef.current = onMapClick }, [onMapClick])
   useEffect(() => { onPointOpenRef.current = onPointOpen }, [onPointOpen])
@@ -51,7 +55,14 @@ export function MapView({ mode, points, activeListId, focusedPoint, onMapClick, 
     map.on('click', (event) => {
       if (activeListIdRef.current) onMapClickRef.current({ longitude: event.lngLat.lng, latitude: event.lngLat.lat })
     })
-    map.on('error', (event) => { if (event.error?.message) setError(`Не удалось загрузить карту: ${event.error.message}`) })
+    map.on('error', (event) => {
+      const detail = event.error?.message ? ` ${event.error.message}` : ''
+      const message = requestedModeRef.current === 'online'
+        ? `Онлайн-карта не загрузилась. Проверьте подключение к интернету и доступ к OpenFreeMap.${detail}`
+        : `Не удалось отобразить локальную карту. Проверьте PMTiles-архив и локальный сервер.${detail}`
+      setLoadingMap(false)
+      setError(message)
+    })
     mapRef.current = map
     return () => {
       markersRef.current.forEach((marker) => marker.remove())
@@ -63,20 +74,43 @@ export function MapView({ mode, points, activeListId, focusedPoint, onMapClick, 
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || appliedModeRef.current === mode) return
+    if (!map) return
+    requestedModeRef.current = mode
+    if (appliedModeRef.current === mode && (mode !== 'local' || appliedRevisionRef.current === mapRevision)) {
+      setLoadingMap(false)
+      setError(null)
+      return
+    }
     const controller = new AbortController()
     const applySource = async () => {
-      if (mode === 'local' && !(await hasLocalArchive(controller.signal))) {
-        map.setStyle(EMPTY_STYLE)
-        appliedModeRef.current = 'local'
-        setError('Локальная карта не найдена. Добавьте настоящий архив public/maps/spb.pmtiles или переключитесь на онлайн-карту.')
-        return
+      setLoadingMap(true)
+      setError(null)
+      if (mode === 'local') {
+        const archive = await inspectLocalArchive(controller.signal, mapRevision)
+        if (!archive.available) {
+          setLoadingMap(false)
+          setError(localArchiveErrorMessage(archive))
+          return
+        }
       }
-      if (!controller.signal.aborted) { setError(null); map.setStyle(getMapStyle(mode)); appliedModeRef.current = mode }
+      if (!controller.signal.aborted) {
+        map.once('style.load', () => {
+          if (requestedModeRef.current !== mode) return
+          appliedModeRef.current = mode
+          appliedRevisionRef.current = mapRevision
+          setLoadingMap(false)
+          setError(null)
+        })
+        map.setStyle(getMapStyle(mode, mapRevision))
+      }
     }
-    void applySource().catch((reason: unknown) => { if (!(reason instanceof DOMException && reason.name === 'AbortError')) setError('Не удалось переключить источник карты.') })
+    void applySource().catch((reason: unknown) => {
+      if (reason instanceof DOMException && reason.name === 'AbortError') return
+      setLoadingMap(false)
+      setError(mode === 'online' ? 'Не удалось подключить онлайн-карту.' : 'Не удалось подключить локальную карту.')
+    })
     return () => controller.abort()
-  }, [mode])
+  }, [mode, mapRevision])
 
   useEffect(() => {
     const map = mapRef.current
@@ -109,6 +143,7 @@ export function MapView({ mode, points, activeListId, focusedPoint, onMapClick, 
 
   return <main className="map-area">
     <div ref={containerRef} className="map-container" aria-label="Интерактивная карта Санкт-Петербурга" />
+    {loadingMap && !error && <div className="map-loading" role="status">Загрузка {mode === 'online' ? 'онлайн-карты' : 'локальной карты'}…</div>}
     {error && <div className="map-error" role="alert"><strong>Карта недоступна</strong><span>{error}</span>{mode === 'local' && <button type="button" onClick={onRequestOnline}>Перейти на онлайн-карту</button>}</div>}
     {!activeListId && <div className="map-hint">Создайте или выберите список, чтобы добавлять точки</div>}
   </main>

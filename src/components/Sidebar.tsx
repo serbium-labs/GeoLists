@@ -19,6 +19,7 @@ interface Props {
   onOpenPoint: (point: MapPoint) => void
   onExport: () => void
   onImport: (file: File) => void
+  onMapInstalled: (version: string) => void
 }
 
 export function Sidebar(props: Props) {
@@ -50,6 +51,6 @@ export function Sidebar(props: Props) {
 
     <section className="sidebar-section source-section"><h2>Источник карты</h2><div className="source-switch" role="radiogroup" aria-label="Источник карты">
       {(Object.keys(MAP_SOURCES) as MapSourceMode[]).map((sourceMode) => <button key={sourceMode} type="button" role="radio" aria-checked={mode === sourceMode} className={mode === sourceMode ? 'active' : ''} onClick={() => props.onModeChange(sourceMode)}>{MAP_SOURCES[sourceMode].label}</button>)}
-    </div><MapUpdates /></section>
+    </div><MapUpdates onInstalled={props.onMapInstalled} /></section>
   </aside>
 }
