@@ -5,12 +5,14 @@ import { extname, join, resolve } from 'node:path'
 import { contentTypeFor, parseByteRange, resolveStaticFile } from './http-utils.mjs'
 import { installMapArchive } from './map-installer.mjs'
 import { activeArchivePath, publicAvailable, validManifest } from './map-update-utils.mjs'
+import { httpHost } from './server-config.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const distDir = join(root, 'dist')
 const mapsDir = resolve(process.env.GEOLISTS_MAPS_DIR || join(root, 'data/maps'))
 const pointerPath = join(mapsDir, 'active.json')
 const port = Number(process.env.PORT || 4173)
+const host = httpHost(process.env)
 const updateConfigPath = join(root, 'config/map-updates.json')
 const updateConfig = await readFile(updateConfigPath, 'utf8').then(JSON.parse, () => ({ manifestUrl: '' }))
 const updateManifestUrl = process.env.MAP_UPDATE_MANIFEST_URL || updateConfig.manifestUrl || ''
@@ -83,6 +85,7 @@ async function serveFile(req, res, path, cache = true) {
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', `http://${req.headers.host}`)
+    if (url.pathname === '/health' && req.method === 'GET') return sendJson(res, 200, { status: 'ok' })
     if (url.pathname === '/api/maps/status' && req.method === 'GET') {
       const active = await activeInfo()
       return sendJson(res, 200, {
@@ -109,4 +112,4 @@ createServer(async (req, res) => {
     if (!file) return sendJson(res, 403, { error: 'Forbidden' })
     return serveFile(req, res, file, extname(file) !== '.html')
   } catch (error) { return sendJson(res, 500, { error: error instanceof Error ? error.message : 'Server error' }) }
-}).listen(port, '127.0.0.1', () => console.log(`GeoLists: http://127.0.0.1:${port}`))
+}).listen(port, host, () => console.log(`GeoLists: http://${host}:${port}`))
