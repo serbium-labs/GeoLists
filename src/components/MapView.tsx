@@ -50,7 +50,7 @@ export function MapView({ mode, mapRevision, points, activeListId, focusedPoint,
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
-    const map = new maplibregl.Map({ container: containerRef.current, style: EMPTY_STYLE, center: SPB_CENTER, zoom: 11, attributionControl: { compact: true }, locale: { 'NavigationControl.ZoomIn': 'Увеличить масштаб', 'NavigationControl.ZoomOut': 'Уменьшить масштаб', 'NavigationControl.ResetBearing': 'Сбросить поворот' } })
+    const map = new maplibregl.Map({ container: containerRef.current, style: EMPTY_STYLE, center: SPB_CENTER, zoom: 11, attributionControl: { compact: true }, locale: { 'NavigationControl.ZoomIn': 'Zoom in', 'NavigationControl.ZoomOut': 'Zoom out', 'NavigationControl.ResetBearing': 'Reset bearing' } })
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right')
     map.on('click', (event) => {
       if (activeListIdRef.current) onMapClickRef.current({ longitude: event.lngLat.lng, latitude: event.lngLat.lat })
@@ -58,8 +58,8 @@ export function MapView({ mode, mapRevision, points, activeListId, focusedPoint,
     map.on('error', (event) => {
       const detail = event.error?.message ? ` ${event.error.message}` : ''
       const message = requestedModeRef.current === 'online'
-        ? `Онлайн-карта не загрузилась. Проверьте подключение к интернету и доступ к OpenFreeMap.${detail}`
-        : `Не удалось отобразить локальную карту. Проверьте PMTiles-архив и локальный сервер.${detail}`
+        ? `The online map failed to load. Check your internet connection and access to OpenFreeMap.${detail}`
+        : `The local map could not be displayed. Check the PMTiles archive and local server.${detail}`
       setLoadingMap(false)
       setError(message)
     })
@@ -107,7 +107,7 @@ export function MapView({ mode, mapRevision, points, activeListId, focusedPoint,
     void applySource().catch((reason: unknown) => {
       if (reason instanceof DOMException && reason.name === 'AbortError') return
       setLoadingMap(false)
-      setError(mode === 'online' ? 'Не удалось подключить онлайн-карту.' : 'Не удалось подключить локальную карту.')
+      setError(mode === 'online' ? 'Could not connect to the online map.' : 'Could not connect to the local map.')
     })
     return () => controller.abort()
   }, [mode, mapRevision])
@@ -142,9 +142,9 @@ export function MapView({ mode, mapRevision, points, activeListId, focusedPoint,
   }, [focusedPoint])
 
   return <main className="map-area">
-    <div ref={containerRef} className="map-container" aria-label="Интерактивная карта Санкт-Петербурга" />
-    {loadingMap && !error && <div className="map-loading" role="status">Загрузка {mode === 'online' ? 'онлайн-карты' : 'локальной карты'}…</div>}
-    {error && <div className="map-error" role="alert"><strong>Карта недоступна</strong><span>{error}</span>{mode === 'local' && <button type="button" onClick={onRequestOnline}>Перейти на онлайн-карту</button>}</div>}
-    {!activeListId && <div className="map-hint">Создайте или выберите список, чтобы добавлять точки</div>}
+    <div ref={containerRef} className="map-container" aria-label="Interactive map of Saint Petersburg" />
+    {loadingMap && !error && <div className="map-loading" role="status">Loading {mode === 'online' ? 'online map' : 'local map'}…</div>}
+    {error && <div className="map-error" role="alert"><strong>Map unavailable</strong><span>{error}</span>{mode === 'local' && <button type="button" onClick={onRequestOnline}>Switch to online map</button>}</div>}
+    {!activeListId && <div className="map-hint">Create or select a list to add points</div>}
   </main>
 }

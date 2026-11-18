@@ -17,46 +17,46 @@ export class ValidationError extends Error {
 
 function required(value: string, label: string, max: number) {
   const trimmed = value.trim()
-  if (!trimmed) throw new ValidationError(`${label}: заполните поле.`)
-  if (trimmed.length > max) throw new ValidationError(`${label}: не более ${max} символов.`)
+  if (!trimmed) throw new ValidationError(`${label}: this field is required.`)
+  if (trimmed.length > max) throw new ValidationError(`${label}: must be no more than ${max} characters.`)
   return trimmed
 }
 
 function optional(value: string, label: string, max: number) {
   const trimmed = value.trim()
-  if (trimmed.length > max) throw new ValidationError(`${label}: не более ${max} символов.`)
+  if (trimmed.length > max) throw new ValidationError(`${label}: must be no more than ${max} characters.`)
   return trimmed
 }
 
 export function validateListName(name: string) {
-  return required(name, 'Название списка', 100)
+  return required(name, 'List name', 100)
 }
 
 export function validatePointFields(fields: PointFields): PointFields {
   if (!Number.isFinite(fields.latitude) || fields.latitude < -90 || fields.latitude > 90) {
-    throw new ValidationError('Широта должна быть числом от −90 до 90.')
+    throw new ValidationError('Latitude must be a number from −90 to 90.')
   }
   if (!Number.isFinite(fields.longitude) || fields.longitude < -180 || fields.longitude > 180) {
-    throw new ValidationError('Долгота должна быть числом от −180 до 180.')
+    throw new ValidationError('Longitude must be a number from −180 to 180.')
   }
 
-  const website = optional(fields.website, 'Сайт', limits.website)
+  const website = optional(fields.website, 'Website', limits.website)
   if (website) {
     try {
       const parsed = new URL(website)
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error()
     } catch {
-      throw new ValidationError('Сайт должен быть корректным URL с протоколом http или https.')
+      throw new ValidationError('Website must be a valid URL using the http or https protocol.')
     }
   }
 
   return {
-    name: required(fields.name, 'Название точки', 150),
-    organization: optional(fields.organization, 'Предприятие / организация', limits.organization),
-    address: optional(fields.address, 'Адрес', limits.address),
-    workingHours: optional(fields.workingHours, 'Часы работы', limits.workingHours),
+    name: required(fields.name, 'Point name', 150),
+    organization: optional(fields.organization, 'Business / organization', limits.organization),
+    address: optional(fields.address, 'Address', limits.address),
+    workingHours: optional(fields.workingHours, 'Business hours', limits.workingHours),
     website,
-    comment: optional(fields.comment, 'Комментарий', limits.comment),
+    comment: optional(fields.comment, 'Comment', limits.comment),
     latitude: fields.latitude,
     longitude: fields.longitude,
   }

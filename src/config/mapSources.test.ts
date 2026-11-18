@@ -42,7 +42,7 @@ describe('inspectLocalArchive', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('PMTiles', { status: 200 })))
     const status = await inspectLocalArchive(controller().signal)
     expect(status).toEqual({ available: false, reason: 'range-unsupported', status: 200 })
-    if (!status.available) expect(localArchiveErrorMessage(status)).toContain('Range-запросы')
+    if (!status.available) expect(localArchiveErrorMessage(status)).toContain('range requests')
   })
 
   it('reports an unavailable development server', async () => {

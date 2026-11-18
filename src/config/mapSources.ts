@@ -12,12 +12,12 @@ export type LocalArchiveStatus =
 export const MAP_SOURCES: Record<MapSourceMode, MapSource> = {
   local: {
     id: 'local',
-    label: 'Локальная',
+    label: 'Local',
     attribution: 'Protomaps · © OpenStreetMap contributors',
   },
   online: {
     id: 'online',
-    label: 'Онлайн',
+    label: 'Online',
     attribution: 'OpenFreeMap · © OpenStreetMap contributors',
   },
 }
@@ -57,10 +57,10 @@ export async function inspectLocalArchive(signal: AbortSignal, revision?: string
 
 export function localArchiveErrorMessage(status: Exclude<LocalArchiveStatus, { available: true }>): string {
   switch (status.reason) {
-    case 'not-found': return 'Локальная карта не установлена. Запустите сервер с подготовленным PMTiles-архивом или перейдите на онлайн-карту.'
-    case 'invalid': return 'Файл локальной карты повреждён или не является архивом PMTiles.'
-    case 'range-unsupported': return 'Сервер локальной карты не поддерживает Range-запросы. Запустите карту через сервер GeoLists.'
-    case 'http': return `Сервер не смог открыть локальную карту (HTTP ${status.status ?? 'ошибка'}).`
-    case 'network': return 'Сервер локальной карты недоступен. При разработке запустите npm run serve вместе с Vite.'
+    case 'not-found': return 'The local map is not installed. Start the server with a prepared PMTiles archive or switch to the online map.'
+    case 'invalid': return 'The local map file is corrupted or is not a PMTiles archive.'
+    case 'range-unsupported': return 'The local map server does not support range requests. Run the map through the GeoLists server.'
+    case 'http': return `The server could not open the local map (HTTP ${status.status ?? 'error'}).`
+    case 'network': return 'The local map server is unavailable. During development, run npm run serve alongside Vite.'
   }
 }

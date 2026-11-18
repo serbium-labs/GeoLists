@@ -10,7 +10,7 @@ import { createMapData, MAX_MAPDATA_BYTES, parseMapData, safeMapDataFilename, ty
 
 function messageFrom(error: unknown) {
   if (error instanceof ValidationError || error instanceof Error) return error.message
-  return 'Не удалось сохранить изменения.'
+  return 'Failed to save changes.'
 }
 
 export default function App() {
@@ -50,7 +50,7 @@ export default function App() {
   }, [activeListId])
 
   const createList = async () => {
-    const name = window.prompt('Название нового списка')
+    const name = window.prompt('New list name')
     if (name === null) return
     try {
       setError(null)
@@ -61,13 +61,13 @@ export default function App() {
   }
 
   const renameList = async (list: MapList) => {
-    const name = window.prompt('Новое название списка', list.name)
+    const name = window.prompt('New list name', list.name)
     if (name === null) return
     try { setError(null); await repository.renameList(list.id, name); await refreshLists() } catch (reason) { setError(messageFrom(reason)) }
   }
 
   const deleteList = async (list: MapList) => {
-    if (!window.confirm(`Удалить список «${list.name}» и все его точки?`)) return
+    if (!window.confirm(`Delete the list “${list.name}” and all its points?`)) return
     try { setError(null); await repository.deleteList(list.id); await refreshLists() } catch (reason) { setError(messageFrom(reason)) }
   }
 
@@ -86,7 +86,7 @@ export default function App() {
   }
 
   const deletePoint = async () => {
-    if (!activeListId || !editingPoint || !window.confirm(`Удалить точку «${editingPoint.name}»?`)) return
+    if (!activeListId || !editingPoint || !window.confirm(`Delete the point “${editingPoint.name}”?`)) return
     try {
       setError(null)
       await repository.deletePoint(activeListId, editingPoint.id)
@@ -107,7 +107,7 @@ export default function App() {
   const exportList = async () => {
     const list = lists.find((candidate) => candidate.id === activeListId)
     if (!list) return
-    const requestedName = window.prompt('Имя экспортируемого файла', list.name)
+    const requestedName = window.prompt('Export file name', list.name)
     if (requestedName === null) return
     try {
       setError(null)
@@ -124,7 +124,7 @@ export default function App() {
   const prepareImport = async (file: File) => {
     try {
       setError(null)
-      if (file.size > MAX_MAPDATA_BYTES) throw new Error('Размер файла превышает 10 МБ.')
+      if (file.size > MAX_MAPDATA_BYTES) throw new Error('File size exceeds 10 MB.')
       setImportPreview(await parseMapData(await file.text()))
     } catch (reason) { setImportPreview(null); setError(messageFrom(reason)) }
   }
@@ -147,6 +147,6 @@ export default function App() {
     <MapView mode={mode} mapRevision={mapRevision} points={points} activeListId={activeListId} focusedPoint={focusedPoint} onMapClick={(coordinates) => { setError(null); setEditingPoint(null); setDraftCoordinates(coordinates) }} onPointOpen={openPoint} onRequestOnline={() => setMode('online')} />
     {error && !panelCoordinates && <div className="app-error" role="alert">{error}<button type="button" onClick={() => setError(null)}>×</button></div>}
     {panelCoordinates && <PointPanel point={editingPoint} coordinates={panelCoordinates} error={error} saving={saving} onClose={() => { setDraftCoordinates(null); setEditingPoint(null); setError(null) }} onSave={(fields) => void savePoint(fields)} onDelete={editingPoint ? () => void deletePoint() : null} />}
-    {importPreview && <div className="panel-backdrop"><section className="import-preview" role="dialog" aria-modal="true" aria-labelledby="import-title"><h2 id="import-title">Предварительный просмотр</h2><dl><div><dt>Название списка</dt><dd>{importPreview.list.name}</dd></div><div><dt>Количество точек</dt><dd>{importPreview.points.length}</dd></div></dl><p>Список и точки будут добавлены с новыми идентификаторами. Существующие данные не изменятся.</p>{error && <p className="form-error">{error}</p>}<div className="form-actions"><span /><button className="secondary-button" type="button" onClick={() => setImportPreview(null)}>Отмена</button><button className="primary-button" type="button" disabled={saving} onClick={() => void confirmImport()}>{saving ? 'Импорт…' : 'Импортировать'}</button></div></section></div>}
+    {importPreview && <div className="panel-backdrop"><section className="import-preview" role="dialog" aria-modal="true" aria-labelledby="import-title"><h2 id="import-title">Import preview</h2><dl><div><dt>List name</dt><dd>{importPreview.list.name}</dd></div><div><dt>Number of points</dt><dd>{importPreview.points.length}</dd></div></dl><p>The list and its points will be added with new identifiers. Existing data will not be changed.</p>{error && <p className="form-error">{error}</p>}<div className="form-actions"><span /><button className="secondary-button" type="button" onClick={() => setImportPreview(null)}>Cancel</button><button className="primary-button" type="button" disabled={saving} onClick={() => void confirmImport()}>{saving ? 'Importing…' : 'Import'}</button></div></section></div>}
   </div>
 }

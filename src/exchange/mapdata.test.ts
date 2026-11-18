@@ -23,26 +23,26 @@ describe('.mapdata', () => {
   })
 
   it('отклоняет повреждённый JSON', async () => {
-    await expect(parseMapData('{broken')).rejects.toThrow('корректным JSON')
+    await expect(parseMapData('{broken')).rejects.toThrow('valid JSON')
   })
 
   it('отклоняет неверную контрольную сумму', async () => {
     const exported = await createMapData(list, [point])
-    await expect(parseMapData(exported.replace('Поставщики', 'Получатели'))).rejects.toThrow('Контрольная сумма не совпадает')
+    await expect(parseMapData(exported.replace('Поставщики', 'Получатели'))).rejects.toThrow('Checksum mismatch')
   })
 
   it('отклоняет дублирующиеся ID', async () => {
     const duplicate = { ...point, name: 'Вторая точка' }
-    await expect(parseMapData(await createMapData(list, [point, duplicate]))).rejects.toThrow('повторяющиеся ID')
+    await expect(parseMapData(await createMapData(list, [point, duplicate]))).rejects.toThrow('duplicate IDs')
   })
 
   it('отклоняет превышение размера', async () => {
-    await expect(parseMapData(' '.repeat(MAX_MAPDATA_BYTES + 1))).rejects.toThrow('10 МБ')
+    await expect(parseMapData(' '.repeat(MAX_MAPDATA_BYTES + 1))).rejects.toThrow('10 MB')
   })
 
   it('отклоняет опасный URL', async () => {
     const unsafe = { ...point, website: 'javascript:alert(1)' }
-    await expect(parseMapData(await createMapData(list, [unsafe]))).rejects.toThrow('http или https')
+    await expect(parseMapData(await createMapData(list, [unsafe]))).rejects.toThrow('http or https')
   })
 
   it('создаёт документированную ссылку 2ГИС в порядке longitude,latitude', () => {

@@ -12,7 +12,7 @@ export type MapUpdateStatus = {
 
 export const formatMapSize = (bytes?: number) => {
   if (!bytes) return ''
-  const units = ['Б', 'КБ', 'МБ', 'ГБ']
+  const units = ['B', 'KB', 'MB', 'GB']
   let value = bytes
   let unit = 0
   while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1 }
@@ -31,7 +31,7 @@ export function MapUpdates({ onInstalled }: Props) {
 
   const refresh = async () => {
     const response = await fetch('/api/maps/status', { cache: 'no-store' })
-    if (!response.ok) throw new Error('Управление картой доступно при запуске через npm run serve')
+    if (!response.ok) throw new Error('Map management is available when running npm run serve')
     const next = await response.json() as MapUpdateStatus
     setStatus(next)
     const version = next.active?.version ?? null
@@ -49,11 +49,11 @@ export function MapUpdates({ onInstalled }: Props) {
     try {
       const response = await fetch('/api/maps/check', { method: 'POST' })
       const value = await response.json() as { version?: string; updateAvailable?: boolean; error?: string }
-      if (!response.ok) throw new Error(value.error || 'Не удалось проверить карту')
-      if (!silent) setMessage(value.updateAvailable ? `Доступна версия ${value.version}` : 'Установлена актуальная версия')
+      if (!response.ok) throw new Error(value.error || 'Failed to check the map')
+      if (!silent) setMessage(value.updateAvailable ? `Version ${value.version} is available` : 'The latest version is installed')
       await refresh()
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Ошибка проверки')
+      setMessage(error instanceof Error ? error.message : 'Update check failed')
     } finally { setBusy(false) }
   }
 
@@ -62,7 +62,7 @@ export function MapUpdates({ onInstalled }: Props) {
     void refresh().then((next) => {
       if (!cancelled && next.updatesConfigured) void check(true)
     }).catch((error: unknown) => {
-      if (!cancelled) setMessage(error instanceof Error ? error.message : 'Локальный сервер недоступен')
+      if (!cancelled) setMessage(error instanceof Error ? error.message : 'Local server is unavailable')
     })
     return () => { cancelled = true }
   }, [])
@@ -70,7 +70,7 @@ export function MapUpdates({ onInstalled }: Props) {
   useEffect(() => {
     if (!status || !['downloading', 'verifying'].includes(status.phase)) return
     const timer = window.setInterval(() => void refresh().catch((error: unknown) => {
-      setMessage(error instanceof Error ? error.message : 'Не удалось получить прогресс')
+      setMessage(error instanceof Error ? error.message : 'Failed to get progress')
     }), 500)
     return () => window.clearInterval(timer)
   }, [status?.phase])
@@ -80,27 +80,27 @@ export function MapUpdates({ onInstalled }: Props) {
     try {
       const response = await fetch('/api/maps/update', { method: 'POST' })
       const value = await response.json() as { error?: string }
-      if (!response.ok) throw new Error(value.error || 'Не удалось начать скачивание')
+      if (!response.ok) throw new Error(value.error || 'Failed to start download')
       await refresh()
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Ошибка скачивания') } finally { setBusy(false) }
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Download failed') } finally { setBusy(false) }
   }
 
-  if (!status) return <div className="map-updates"><p className="map-update-note">{message || 'Проверка офлайн-карты…'}</p></div>
+  if (!status) return <div className="map-updates"><p className="map-update-note">{message || 'Checking offline map…'}</p></div>
   const percent = status.total ? Math.min(100, Math.round(status.received / status.total * 100)) : 0
   const working = status.phase === 'downloading' || status.phase === 'verifying'
   const downloadSize = status.total || status.available?.size
   return <div className="map-updates">
-    <p>{status.active ? `Карта установлена: ${status.active.version}${status.active.size ? ` · ${formatMapSize(status.active.size)}` : ''}` : 'Офлайн-карта отсутствует'}</p>
-    {!status.active && status.available?.updateAvailable && <p className="map-update-available">Карта доступна: {status.available.version} · {formatMapSize(status.available.size)}</p>}
-    {status.active && status.available?.updateAvailable && <p className="map-update-available">Доступно обновление {status.available.version} · {formatMapSize(status.available.size)}</p>}
-    {working && <><progress max={100} value={status.phase === 'verifying' ? 100 : percent} /><small>{status.phase === 'verifying' ? 'Проверка SHA-256 и формата…' : `Скачивание: ${percent}%${downloadSize ? ` · ${formatMapSize(status.received)} из ${formatMapSize(downloadSize)}` : ''}`}</small></>}
-    {status.phase === 'complete' && <p className="map-update-success">Карта установлена и готова к работе.</p>}
-    {status.phase === 'failed' && <p className="form-error">Ошибка: {status.error}</p>}
+    <p>{status.active ? `Map installed: ${status.active.version}${status.active.size ? ` · ${formatMapSize(status.active.size)}` : ''}` : 'Offline map is not installed'}</p>
+    {!status.active && status.available?.updateAvailable && <p className="map-update-available">Map available: {status.available.version} · {formatMapSize(status.available.size)}</p>}
+    {status.active && status.available?.updateAvailable && <p className="map-update-available">Update available: {status.available.version} · {formatMapSize(status.available.size)}</p>}
+    {working && <><progress max={100} value={status.phase === 'verifying' ? 100 : percent} /><small>{status.phase === 'verifying' ? 'Verifying SHA-256 and format…' : `Downloading: ${percent}%${downloadSize ? ` · ${formatMapSize(status.received)} of ${formatMapSize(downloadSize)}` : ''}`}</small></>}
+    {status.phase === 'complete' && <p className="map-update-success">Map installed and ready to use.</p>}
+    {status.phase === 'failed' && <p className="form-error">Error: {status.error}</p>}
     {message && <p className="map-update-note">{message}</p>}
     <div className="map-update-actions">
-      <button type="button" disabled={busy || working || !status.updatesConfigured} onClick={() => void check()}>{busy && !working ? 'Проверка…' : 'Проверить'}</button>
-      <button type="button" disabled={busy || working || !status.available?.updateAvailable} onClick={() => void update()}>{status.active ? 'Скачать обновление' : 'Скачать карту'}</button>
+      <button type="button" disabled={busy || working || !status.updatesConfigured} onClick={() => void check()}>{busy && !working ? 'Checking…' : 'Check for updates'}</button>
+      <button type="button" disabled={busy || working || !status.available?.updateAvailable} onClick={() => void update()}>{status.active ? 'Download update' : 'Download map'}</button>
     </div>
-    {!status.updatesConfigured && <small>Источник карты ещё не опубликован или не настроен в дистрибутиве.</small>}
+    {!status.updatesConfigured && <small>The map source has not been published yet or is not configured in this distribution.</small>}
   </div>
 }

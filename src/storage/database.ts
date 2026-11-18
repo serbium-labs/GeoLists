@@ -36,7 +36,7 @@ export class GeoListsRepository {
 
   async renameList(id: string, name: string) {
     const list = await this.db.lists.get(id)
-    if (!list) throw new Error('Список не найден.')
+    if (!list) throw new Error('List not found.')
     const updated = { ...list, name: validateListName(name), updatedAt: new Date().toISOString() }
     await this.db.lists.put(updated)
     return updated
@@ -44,7 +44,7 @@ export class GeoListsRepository {
 
   async deleteList(id: string) {
     await this.db.transaction('rw', this.db.lists, this.db.points, async () => {
-      if (!(await this.db.lists.get(id))) throw new Error('Список не найден.')
+      if (!(await this.db.lists.get(id))) throw new Error('List not found.')
       await this.db.points.where('listId').equals(id).delete()
       await this.db.lists.delete(id)
     })
@@ -55,7 +55,7 @@ export class GeoListsRepository {
     const now = new Date().toISOString()
     const point: MapPoint = { ...values, id: crypto.randomUUID(), listId, createdAt: now, updatedAt: now }
     await this.db.transaction('rw', this.db.lists, this.db.points, async () => {
-      if (!(await this.db.lists.get(listId))) throw new Error('Активный список больше не существует.')
+      if (!(await this.db.lists.get(listId))) throw new Error('The active list no longer exists.')
       await this.db.points.add(point)
     })
     return point
@@ -64,9 +64,9 @@ export class GeoListsRepository {
   async updatePoint(listId: string, id: string, input: PointFields) {
     const values = validatePointFields(input)
     return this.db.transaction('rw', this.db.lists, this.db.points, async () => {
-      if (!(await this.db.lists.get(listId))) throw new Error('Активный список больше не существует.')
+      if (!(await this.db.lists.get(listId))) throw new Error('The active list no longer exists.')
       const point = await this.db.points.get(id)
-      if (!point || point.listId !== listId) throw new Error('Точка не принадлежит активному списку.')
+      if (!point || point.listId !== listId) throw new Error('The point does not belong to the active list.')
       const updated: MapPoint = { ...point, ...values, updatedAt: new Date().toISOString() }
       await this.db.points.put(updated)
       return updated
@@ -76,7 +76,7 @@ export class GeoListsRepository {
   async deletePoint(listId: string, id: string) {
     await this.db.transaction('rw', this.db.points, async () => {
       const point = await this.db.points.get(id)
-      if (!point || point.listId !== listId) throw new Error('Точка не принадлежит активному списку.')
+      if (!point || point.listId !== listId) throw new Error('The point does not belong to the active list.')
       await this.db.points.delete(id)
     })
   }
