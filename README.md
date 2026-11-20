@@ -126,6 +126,26 @@ The selected mode is saved in `localStorage`. When starting in local mode, the a
 
 A local server is required for offline use after installation: opening `index.html` via `file://` does not support the required Range requests and update API correctly.
 
+## User input and `.mapdata` validation
+
+The interface, `.mapdata` import, and IndexedDB repository use the same validation rules. Text is normalized to Unicode NFC, surrounding whitespace is removed, and CRLF/CR line endings are converted to LF. Valid Unicode is preserved. Single-line fields accept printable Unicode without line breaks; comments additionally accept line breaks. Control characters and invalid Unicode sequences are rejected. Lengths are measured in Unicode code points rather than UTF-16 code units.
+
+| Field | Required | Maximum length | Additional rules |
+| --- | --- | ---: | --- |
+| List name | Yes | 100 | Printable single-line Unicode |
+| Point name | Yes | 150 | Printable single-line Unicode |
+| Business / organization | No | 200 | Printable single-line Unicode |
+| Address | No | 500 | Printable single-line Unicode |
+| Business hours | No | 300 | Printable single-line Unicode |
+| Website | No | 2,048 | Absolute URL using only HTTP or HTTPS; normalized by the URL parser |
+| Comment | No | 3,000 | Printable Unicode and line breaks |
+| Latitude | Yes | — | Finite number from −90 through 90 |
+| Longitude | Yes | — | Finite number from −180 through 180 |
+
+Imports are limited to 10 MB and 10,000 points. List and point identifiers and timestamps are validated separately as `.mapdata` structural metadata. Imports are committed to IndexedDB in one transaction, so a failed import does not leave partial data. Export file names are normalized, limited to 180 Unicode code points, and have file-system control and reserved characters replaced.
+
+The SHA-256 checksum in a `.mapdata` document detects accidental corruption or modification of its contents. It does not authenticate the author or establish that a document comes from a trusted source.
+
 ## Storage, data sources, and licenses
 
 - The large PMTiles archive is stored in the file system rather than IndexedDB/Cache API: browser storage quotas vary and cached data may be automatically evicted.

@@ -74,17 +74,17 @@ function validatePoint(value: unknown): MapDataPoint {
   if (!isRecord(value)) throw new MapDataError('Invalid point structure.')
   const id = readString(value, 'id')
   if (!id || id.length > 100) throw new MapDataError('Invalid point ID.')
+  if (typeof value.latitude !== 'number' || typeof value.longitude !== 'number') throw new MapDataError('Point coordinates must be numbers.')
   const raw: PointFields = {
     name: readString(value, 'name'),
     organization: readString(value, 'organization'),
     address: readString(value, 'address'),
-    latitude: value.latitude as number,
-    longitude: value.longitude as number,
+    latitude: value.latitude,
+    longitude: value.longitude,
     workingHours: readString(value, 'workingHours'),
     website: readString(value, 'website'),
     comment: readString(value, 'comment'),
   }
-  if (typeof value.latitude !== 'number' || typeof value.longitude !== 'number') throw new MapDataError('Point coordinates must be numbers.')
   try {
     return { id, ...validatePointFields(raw), createdAt: readIsoDate(value, 'createdAt'), updatedAt: readIsoDate(value, 'updatedAt') }
   } catch (error) {
@@ -131,7 +131,8 @@ export function buildTwoGisUrl(longitude: number, latitude: number) {
   return `https://2gis.ru/geo/${encodeURIComponent(`${longitude},${latitude}`)}`
 }
 
-export function safeMapDataFilename(value: string) {
-  const cleaned = value.trim().replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 180) || 'geolists'
+export function safeMapDataFilename(value: string): string {
+  const normalized = value.normalize('NFC').trim().replace(/[\\/:*?"<>|\u0000-\u001f\u007f-\u009f]/g, '_')
+  const cleaned = Array.from(normalized).slice(0, 180).join('') || 'geolists'
   return cleaned.toLowerCase().endsWith('.mapdata') ? cleaned : `${cleaned}.mapdata`
 }
