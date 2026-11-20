@@ -87,18 +87,18 @@ export function MapUpdates({ onInstalled }: Props) {
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Download failed') } finally { setBusy(false) }
   }
 
-  if (!status) return <div className="map-updates"><p className="map-update-note">{message || 'Checking offline map…'}</p></div>
+  if (!status) return <div className="map-updates"><p className="map-update-note" role="status" aria-live="polite">{message || 'Checking offline map…'}</p></div>
   const percent = status.total ? Math.min(100, Math.round(status.received / status.total * 100)) : 0
   const working = status.phase === 'downloading' || status.phase === 'verifying'
   const downloadSize = status.total || status.available?.size
-  return <div className="map-updates">
+  return <div className="map-updates" aria-live="polite" aria-busy={busy || working}>
     <p>{status.active ? `Map installed: ${status.active.version}${status.active.size ? ` · ${formatMapSize(status.active.size)}` : ''}` : 'Offline map is not installed'}</p>
     {!status.active && status.available?.updateAvailable && <p className="map-update-available">Map available: {status.available.version} · {formatMapSize(status.available.size)}</p>}
     {status.active && status.available?.updateAvailable && <p className="map-update-available">Update available: {status.available.version} · {formatMapSize(status.available.size)}</p>}
-    {working && <><progress max={100} value={status.phase === 'verifying' ? 100 : percent} /><small>{status.phase === 'verifying' ? 'Verifying SHA-256 and format…' : `Downloading: ${percent}%${downloadSize ? ` · ${formatMapSize(status.received)} of ${formatMapSize(downloadSize)}` : ''}`}</small></>}
+    {working && <><progress aria-label="Offline map download progress" max={100} value={status.phase === 'verifying' ? 100 : percent} /><small>{status.phase === 'verifying' ? 'Verifying SHA-256 and format…' : `Downloading: ${percent}%${downloadSize ? ` · ${formatMapSize(status.received)} of ${formatMapSize(downloadSize)}` : ''}`}</small></>}
     {status.phase === 'complete' && <p className="map-update-success">Map installed and ready to use.</p>}
-    {status.phase === 'failed' && <p className="form-error">Error: {status.error}</p>}
-    {message && <p className="map-update-note">{message}</p>}
+    {status.phase === 'failed' && <p className="form-error" role="alert">Error: {status.error}</p>}
+    {message && <p className="map-update-note" role="status">{message}</p>}
     <div className="map-update-actions">
       <button type="button" disabled={busy || working || !status.updatesConfigured} onClick={() => void check()}>{busy && !working ? 'Checking…' : 'Check for updates'}</button>
       <button type="button" disabled={busy || working || !status.available?.updateAvailable} onClick={() => void update()}>{status.active ? 'Download update' : 'Download map'}</button>

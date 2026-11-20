@@ -102,8 +102,13 @@ export class GeoListsRepository {
   }
 
   async importMapData(data: MapDataContent) {
-    const list: MapList = { ...data.list, id: crypto.randomUUID() }
-    const points: MapPoint[] = data.points.map((point) => ({ ...point, id: crypto.randomUUID(), listId: list.id }))
+    const list: MapList = { ...data.list, id: crypto.randomUUID(), name: validateListName(data.list.name) }
+    const points: MapPoint[] = data.points.map((point) => ({
+      ...point,
+      ...validatePointFields(point),
+      id: crypto.randomUUID(),
+      listId: list.id,
+    }))
     await this.db.transaction('rw', this.db.lists, this.db.points, async () => {
       await this.db.lists.add(list)
       await this.db.points.bulkAdd(points)
