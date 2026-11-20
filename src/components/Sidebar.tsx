@@ -1,8 +1,10 @@
+import type { KeyboardEvent, ReactElement } from 'react'
 import { MAP_SOURCES } from '../config/mapSources'
 import type { MapList, MapPoint } from '../types/data'
 import type { MapSourceMode } from '../types/map'
 import { formatCoordinates } from '../utils/coordinates'
 import { MapUpdates } from './MapUpdates'
+import { mapSourceForKey } from './mapSourceKeyboard'
 
 interface Props {
   mode: MapSourceMode
@@ -22,15 +24,25 @@ interface Props {
   onMapInstalled: (version: string) => void
 }
 
-export function Sidebar(props: Props) {
+export function Sidebar(props: Props): ReactElement {
   const { mode, lists, pointCounts, activeListId, points, loading } = props
+  const handleMapSourceKeyDown = (sourceMode: MapSourceMode, event: KeyboardEvent<HTMLButtonElement>): void => {
+    const nextMode = mapSourceForKey(sourceMode, event.key)
+    if (!nextMode) {
+      return
+    }
+
+    event.preventDefault()
+    props.onModeChange(nextMode)
+    document.getElementById(`map-source-${nextMode}`)?.focus()
+  }
   return <aside className="sidebar">
     <header className="brand"><div className="brand-mark" aria-hidden="true">G</div><div><h1>GeoLists</h1><p>Saint Petersburg</p></div></header>
     <section className="sidebar-section lists-section">
       <div className="section-heading"><h2>My lists</h2><span>{lists.length}</span></div>
-      {loading ? <p className="muted">Loading…</p> : lists.length === 0 ? <div className="empty-state"><span className="pin-outline" aria-hidden="true" /><p>No lists yet</p></div> : <div className="list-stack">
+      {loading ? <div className="list-skeleton" role="status" aria-live="polite" aria-label="Loading lists"><span /><span /><span /></div> : lists.length === 0 ? <div className="empty-state"><span className="pin-outline" aria-hidden="true" /><p>No lists yet</p></div> : <div className="list-stack">
         {lists.map((list) => <div className={`list-row ${activeListId === list.id ? 'active' : ''}`} key={list.id}>
-          <button className="list-select" type="button" onClick={() => props.onSelectList(list.id)}><span>{list.name}</span><small>{pointCounts[list.id] ?? 0}</small></button>
+          <button className="list-select" type="button" aria-current={activeListId === list.id ? 'true' : undefined} aria-label={`${list.name}, ${pointCounts[list.id] ?? 0} points`} onClick={() => props.onSelectList(list.id)}><span>{list.name}</span><small aria-hidden="true">{pointCounts[list.id] ?? 0}</small></button>
           <button className="icon-button" type="button" aria-label={`Rename ${list.name}`} onClick={() => props.onRenameList(list)}>✎</button>
           <button className="icon-button danger" type="button" aria-label={`Delete ${list.name}`} onClick={() => props.onDeleteList(list)}>×</button>
         </div>)}
@@ -50,7 +62,7 @@ export function Sidebar(props: Props) {
     </section>}
 
     <section className="sidebar-section source-section"><h2>Map source</h2><div className="source-switch" role="radiogroup" aria-label="Map source">
-      {(Object.keys(MAP_SOURCES) as MapSourceMode[]).map((sourceMode) => <button key={sourceMode} type="button" role="radio" aria-checked={mode === sourceMode} className={mode === sourceMode ? 'active' : ''} onClick={() => props.onModeChange(sourceMode)}>{MAP_SOURCES[sourceMode].label}</button>)}
+      {(Object.keys(MAP_SOURCES) as MapSourceMode[]).map((sourceMode) => <button id={`map-source-${sourceMode}`} key={sourceMode} type="button" role="radio" aria-checked={mode === sourceMode} tabIndex={mode === sourceMode ? 0 : -1} className={mode === sourceMode ? 'active' : ''} onKeyDown={(event) => handleMapSourceKeyDown(sourceMode, event)} onClick={() => props.onModeChange(sourceMode)}>{MAP_SOURCES[sourceMode].label}</button>)}
     </div><MapUpdates onInstalled={props.onMapInstalled} /></section>
   </aside>
 }

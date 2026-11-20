@@ -122,11 +122,11 @@ export function MapView({ mode, mapRevision, points, activeListId, focusedPoint,
     points.forEach((point) => {
       const position: [number, number] = [point.longitude, point.latitude]
       const existing = markersRef.current.get(point.id)
-      if (existing) { existing.setLngLat(position); existing.getElement().setAttribute('aria-label', point.name); return }
+      if (existing) { existing.setLngLat(position); existing.getElement().setAttribute('aria-label', `Open ${point.name}`); return }
       const element = document.createElement('button')
       element.className = 'point-marker'
       element.type = 'button'
-      element.setAttribute('aria-label', point.name)
+      element.setAttribute('aria-label', `Open ${point.name}`)
       element.addEventListener('click', (event) => {
         event.stopPropagation()
         const current = pointsRef.current.find((candidate) => candidate.id === point.id)
@@ -141,10 +141,10 @@ export function MapView({ mode, mapRevision, points, activeListId, focusedPoint,
     mapRef.current.flyTo({ center: [focusedPoint.longitude, focusedPoint.latitude], zoom: Math.max(mapRef.current.getZoom(), 15) })
   }, [focusedPoint])
 
-  return <main className="map-area">
+  return <main className="map-area" aria-label="Map">
     <div ref={containerRef} className="map-container" aria-label="Interactive map of Saint Petersburg" />
-    {loadingMap && !error && <div className="map-loading" role="status">Loading {mode === 'online' ? 'online map' : 'local map'}…</div>}
+    {loadingMap && !error && <div className="map-loading" role="status" aria-live="polite">Loading {mode === 'online' ? 'online map' : 'local map'}…</div>}
     {error && <div className="map-error" role="alert"><strong>Map unavailable</strong><span>{error}</span>{mode === 'local' && <button type="button" onClick={onRequestOnline}>Switch to online map</button>}</div>}
-    {!activeListId && <div className="map-hint">Create or select a list to add points</div>}
+    {!activeListId && <div className="map-hint" role="status">Create or select a list to add points</div>}
   </main>
 }

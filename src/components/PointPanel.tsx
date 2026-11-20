@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactElement } from 'react'
 import type { MapPoint, PointFields } from '../types/data'
 import { formatCoordinate } from '../utils/coordinates'
 import { buildTwoGisUrl } from '../exchange/mapdata'
 import { parseCoordinateInput, TEXT_FIELD_RULES, validatePointFields, ValidationError } from '../storage/validation'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 
 const EMPTY_TEXT = { name: '', organization: '', address: '', workingHours: '', website: '', comment: '' }
 
@@ -17,10 +18,12 @@ interface Props {
 }
 
 export function PointPanel({ point, coordinates, error, saving, onClose, onSave, onDelete }: Props): ReactElement {
+  const dialogRef = useRef<HTMLElement>(null)
   const [values, setValues] = useState(EMPTY_TEXT)
   const [latitude, setLatitude] = useState(String(coordinates.latitude))
   const [longitude, setLongitude] = useState(String(coordinates.longitude))
   const [validationError, setValidationError] = useState<string | null>(null)
+  useDialogFocus(dialogRef, onClose)
   useEffect(() => {
     setValues(point ? { name: point.name, organization: point.organization, address: point.address, workingHours: point.workingHours, website: point.website, comment: point.comment } : EMPTY_TEXT)
     setLatitude(String(point?.latitude ?? coordinates.latitude))
@@ -44,11 +47,11 @@ export function PointPanel({ point, coordinates, error, saving, onClose, onSave,
   const field = (name: keyof typeof EMPTY_TEXT, type = 'text'): ReactElement => {
     const rule = TEXT_FIELD_RULES[name]
     const requiredIndicator = rule.required ? ' *' : ''
-    return <label>{rule.label}{requiredIndicator}<input type={type} value={values[name]} aria-required={rule.required} onChange={(event) => setValues({ ...values, [name]: event.target.value })} /></label>
+    return <label>{rule.label}{requiredIndicator}<input type={type} value={values[name]} aria-required={rule.required} data-dialog-initial-focus={name === 'name' ? '' : undefined} onChange={(event) => setValues({ ...values, [name]: event.target.value })} /></label>
   }
   return <div className="panel-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-    <section className="point-panel" role="dialog" aria-modal="true" aria-labelledby="point-title">
-      <header><div><h2 id="point-title">{point ? 'Point details' : 'New point'}</h2><p>WGS 84 · {formatCoordinate(Number(latitude))}, {formatCoordinate(Number(longitude))}</p></div><button type="button" className="close-button" onClick={onClose}>×</button></header>
+    <section ref={dialogRef} className="point-panel" role="dialog" aria-modal="true" aria-labelledby="point-title" tabIndex={-1}>
+      <header><div><h2 id="point-title">{point ? 'Point details' : 'New point'}</h2><p>WGS 84 · {formatCoordinate(Number(latitude))}, {formatCoordinate(Number(longitude))}</p></div><button type="button" className="close-button" aria-label="Close point details" onClick={onClose}>×</button></header>
       <form onSubmit={submit}>
         {field('name')}
         {field('organization')}
