@@ -83,6 +83,8 @@ npm run map:manifest -- \
   --archive data/maps/spb-20261111.pmtiles \
   --version 20261111 \
   --url "$PUBLISHED_ARCHIVE_URL" \
+  --bounds 29.40,59.63,31.05,60.25 \
+  --max-zoom 15 \
   --output spb-latest.json
 ```
 
@@ -93,9 +95,13 @@ The generator validates PMTiles v3, calculates the actual size and SHA-256, and 
   "version": "2026-10-12",
   "url": "<actual HTTPS URL of the release asset>",
   "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "size": 123456789
+  "size": 123456789,
+  "bounds": [29.4, 59.63, 31.05, 60.25],
+  "maxZoom": 15
 }
 ```
+
+Spatial metadata is mandatory for newly generated manifests. Existing GeoLists manifests without these fields remain compatible and use the historical Saint Petersburg bounds and zoom 15 during validation.
 
 5. Attach `spb-latest.json` to the Release as an asset with a stable name. For TASK 005, the expected URL is `https://github.com/serbium-labs/GeoLists/releases/download/map-spb-20261111/spb-latest.json`. Until this URL returns JSON with HTTP 200, the update integration is not considered published.
 6. Record the verified manifest URL in the tracked `config/map-updates.json` file:
@@ -110,7 +116,7 @@ After distribution, end users do not need to set an environment variable. `MAP_U
 
 To update the map, prepare a new regional archive, publish it as a new asset, rerun `map:manifest` with the new version and actual URL, and replace the contents of the manifest at its stable URL. If the hosting service does not allow an asset to be replaced, publish a new manifest and update `config/map-updates.json` in the next application release.
 
-The “Check” action compares the manifest `version` with the active version. “Download map” for initial installation and “Download update” for subsequent updates delegate downloading to the Node.js server rather than the browser. The server streams the data into a separate temporary file and displays actual progress. It then verifies the declared size, SHA-256, and PMTiles v3 header. Only after all checks pass does it rename the file and atomically replace `active.json`. On failure, the temporary file is removed and the previous archive remains active. On success, the application automatically selects local mode and opens the new versioned archive URL; neither the server nor the page needs to be restarted.
+The “Check” action compares the manifest `version` with the active version. “Download map” for initial installation and “Download update” for subsequent updates delegate downloading to the Node.js server rather than the browser. Before opening a network connection, the server validates the declared archive size, bounds, maximum zoom, persistent storage limit, and available disk space. It then streams the data into a separate temporary file and displays actual progress, verifies the declared size, SHA-256, and PMTiles v3 header, and atomically replaces `active.json`. On failure, the temporary file is removed and the previous archive remains active. On success, one recent inactive archive is retained for recovery and older inactive archives are removed. The application automatically selects local mode and opens the new versioned archive URL; neither the server nor the page needs to be restarted.
 
 Protomaps does not publish a ready-made stable URL specifically for the Saint Petersburg extract: the official source is the daily planet build, while the regional artifact is prepared and hosted by the application maintainer.
 
@@ -135,6 +141,7 @@ A local server is required for offline use after installation: opening `index.ht
 - The server listens only on `127.0.0.1`. Shared access requires TLS, authentication, and a reverse proxy.
 - Map update POST endpoints require the `X-GeoLists-CSRF: 1` header. Direct loopback access is allowed without a bearer token. The Docker Compose configuration explicitly enables local-only access because its published port is bound to `127.0.0.1`.
 - An externally accessible deployment must set `MAP_UPDATE_API_TOKEN`, remove `MAP_UPDATE_API_LOCAL_ONLY`, and configure the TLS reverse proxy to inject `Authorization: Bearer <token>` for `/api/maps/check` and `/api/maps/update`. The token must remain server-side and must never be exposed to browser code.
+- Offline map storage defaults to a 1 GiB archive limit, 2 GiB total retained storage, 512 MiB of free space after reserving the download, a 10,000 km² region, zoom 15, and one inactive recovery archive. Deployments may override these values with `MAP_MAX_ARCHIVE_BYTES`, `MAP_MAX_STORED_BYTES`, `MAP_MIN_FREE_BYTES`, `MAP_MAX_REGION_AREA_KM2`, `MAP_MAX_ZOOM`, and `MAP_RETAINED_INACTIVE_ARCHIVES`; at least one inactive recovery archive is always retained.
 
 ## Checks
 

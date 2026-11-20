@@ -5,12 +5,13 @@ import { join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 
-export async function installMapArchive({ manifest, mapsDir, pointerPath, fetchImpl = fetch, onProgress = () => {}, onPhase = () => {} }) {
+export async function installMapArchive({ manifest, mapsDir, pointerPath, fetchImpl = fetch, onProgress = () => {}, onPhase = () => {}, beforeDownload = async () => {} }) {
   const temp = join(mapsDir, `.download-${process.pid}-${Date.now()}.pmtiles`)
   const finalName = `spb-${manifest.version}.pmtiles`
   const final = join(mapsDir, finalName)
   let received = 0
   try {
+    await beforeDownload()
     onPhase('downloading')
     const response = await fetchImpl(manifest.url, { signal: AbortSignal.timeout(3_600_000) })
     if (!response.ok || !response.body) throw new Error(`Архив: HTTP ${response.status}`)

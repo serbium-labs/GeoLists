@@ -11,12 +11,14 @@ const archivePath = option('--archive')
 const version = option('--version')
 const url = option('--url')
 const output = option('--output')
-if (!archivePath || !version || !url || !output) {
-  console.error('Usage: npm run map:manifest -- --archive FILE --version VERSION --url HTTPS_URL --output FILE')
+const bounds = option('--bounds')?.split(',').map(Number)
+const maxZoom = Number(option('--max-zoom'))
+if (!archivePath || !version || !url || !output || !bounds || !Number.isSafeInteger(maxZoom)) {
+  console.error('Usage: npm run map:manifest -- --archive FILE --version VERSION --url HTTPS_URL --bounds WEST,SOUTH,EAST,NORTH --max-zoom NUMBER --output FILE')
   process.exitCode = 1
 } else {
   try {
-    const manifest = await generateMapManifest({ archivePath: resolve(archivePath), version, url })
+    const manifest = await generateMapManifest({ archivePath: resolve(archivePath), version, url, bounds, maxZoom })
     const target = resolve(output)
     const temporary = `${target}.tmp`
     await writeFile(temporary, `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx' })

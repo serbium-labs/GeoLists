@@ -5,7 +5,8 @@ import { extname, join, resolve } from 'node:path'
 import { contentTypeFor, parseByteRange, resolveStaticFile } from './http-utils.mjs'
 import { installMapArchive } from './map-installer.mjs'
 import { authorizeMapApiMutation, isMapApiMutation } from './map-api-security.mjs'
-import { activeArchivePath, publicAvailable, validManifest } from './map-update-utils.mjs'
+import { applyRetentionPolicy, ensureDownloadCapacity, storageLimits, validateDownloadLimits } from './map-storage.mjs'
+import { activeArchivePath, publicAvailable, validManifest, withSpatialMetadata } from './map-update-utils.mjs'
 import { httpHost } from './server-config.mjs'
 
 const root = resolve(import.meta.dirname, '..')
@@ -17,6 +18,7 @@ const host = httpHost(process.env)
 const updateConfigPath = join(root, 'config/map-updates.json')
 const updateConfig = await readFile(updateConfigPath, 'utf8').then(JSON.parse, () => ({ manifestUrl: '' }))
 const updateManifestUrl = process.env.MAP_UPDATE_MANIFEST_URL || updateConfig.manifestUrl || ''
+const mapStorageLimits = storageLimits(process.env)
 const state = { phase: 'idle', received: 0, total: 0, error: '', available: null }
 await mkdir(mapsDir, { recursive: true })
 
@@ -54,8 +56,9 @@ async function checkUpdate() {
   const response = await fetch(updateManifestUrl, { cache: 'no-store', signal: AbortSignal.timeout(15_000) })
   if (!response.ok) throw new Error(`Манифест обновления: HTTP ${response.status}`)
   if (!response.url.startsWith('https://')) throw new Error('Манифест перенаправлен на небезопасный URL')
-  const manifest = await response.json()
+  const manifest = withSpatialMetadata(await response.json())
   if (!validManifest(manifest)) throw new Error('Некорректный манифест обновления')
+  validateDownloadLimits(manifest, mapStorageLimits)
   const active = await activeInfo()
   state.available = { ...manifest, currentVersion: active?.version || null, updateAvailable: manifest.version !== active?.version }
   return state.available
@@ -65,14 +68,26 @@ async function installUpdate() {
   if (['downloading', 'verifying'].includes(state.phase)) throw new Error('Обновление уже выполняется')
   const manifest = state.available || await checkUpdate()
   if (!manifest.updateAvailable) return
+  const active = await activeInfo()
   state.phase = 'downloading'; state.received = 0; state.total = manifest.size; state.error = ''
   try {
     await installMapArchive({
       manifest,
       mapsDir,
       pointerPath,
+      beforeDownload: () => ensureDownloadCapacity({
+        mapsDir,
+        manifest,
+        activeFile: active?.file,
+        limits: mapStorageLimits,
+      }),
       onProgress(received, total) { state.received = received; state.total = total },
       onPhase(phase) { state.phase = phase },
+    })
+    await applyRetentionPolicy({
+      mapsDir,
+      activeFile: `spb-${manifest.version}.pmtiles`,
+      retainedInactiveArchives: mapStorageLimits.retainedInactiveArchives,
     })
     state.available = { ...manifest, currentVersion: manifest.version, updateAvailable: false }
     state.phase = 'complete'
