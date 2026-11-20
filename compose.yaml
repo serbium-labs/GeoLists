@@ -1,0 +1,16 @@
+services:
+  geolists:
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      HTTP_HOST: 0.0.0.0
+      PORT: 4173
+      GEOLISTS_MAPS_DIR: /app/data/maps
+    ports:
+      - "127.0.0.1:4173:4173"
+    volumes:
+      - maps:/app/data/maps
+
+volumes:
+  maps:

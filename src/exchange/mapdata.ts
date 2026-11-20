@@ -36,7 +36,7 @@ export function stableStringify(value: unknown): string {
     return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`
   }
   const serialized = JSON.stringify(value)
-  if (serialized === undefined) throw new MapDataError('Файл содержит неподдерживаемое значение.')
+  if (serialized === undefined) throw new MapDataError('The file contains an unsupported value.')
   return serialized
 }
 
@@ -58,22 +58,22 @@ export async function createMapData(list: MapList, points: MapPoint[]): Promise<
 
 function readString(record: Record<string, unknown>, key: string) {
   const value = record[key]
-  if (typeof value !== 'string') throw new MapDataError(`Поле «${key}» должно быть строкой.`)
+  if (typeof value !== 'string') throw new MapDataError(`The “${key}” field must be a string.`)
   return value
 }
 
 function readIsoDate(record: Record<string, unknown>, key: string) {
   const value = readString(record, key)
   if (!/^\d{4}-\d{2}-\d{2}T/.test(value) || !Number.isFinite(Date.parse(value)) || value.length > 40) {
-    throw new MapDataError(`Поле «${key}» содержит некорректную дату.`)
+    throw new MapDataError(`The “${key}” field contains an invalid date.`)
   }
   return value
 }
 
 function validatePoint(value: unknown): MapDataPoint {
-  if (!isRecord(value)) throw new MapDataError('Некорректная структура точки.')
+  if (!isRecord(value)) throw new MapDataError('Invalid point structure.')
   const id = readString(value, 'id')
-  if (!id || id.length > 100) throw new MapDataError('Некорректный ID точки.')
+  if (!id || id.length > 100) throw new MapDataError('Invalid point ID.')
   const raw: PointFields = {
     name: readString(value, 'name'),
     organization: readString(value, 'organization'),
@@ -84,7 +84,7 @@ function validatePoint(value: unknown): MapDataPoint {
     website: readString(value, 'website'),
     comment: readString(value, 'comment'),
   }
-  if (typeof value.latitude !== 'number' || typeof value.longitude !== 'number') throw new MapDataError('Координаты точки должны быть числами.')
+  if (typeof value.latitude !== 'number' || typeof value.longitude !== 'number') throw new MapDataError('Point coordinates must be numbers.')
   try {
     return { id, ...validatePointFields(raw), createdAt: readIsoDate(value, 'createdAt'), updatedAt: readIsoDate(value, 'updatedAt') }
   } catch (error) {
@@ -94,22 +94,22 @@ function validatePoint(value: unknown): MapDataPoint {
 }
 
 export async function parseMapData(text: string): Promise<MapDataContent> {
-  if (new TextEncoder().encode(text).byteLength > MAX_MAPDATA_BYTES) throw new MapDataError('Размер файла превышает 10 МБ.')
+  if (new TextEncoder().encode(text).byteLength > MAX_MAPDATA_BYTES) throw new MapDataError('File size exceeds 10 MB.')
   let raw: unknown
-  try { raw = JSON.parse(text) } catch { throw new MapDataError('Файл не является корректным JSON.') }
-  if (!isRecord(raw)) throw new MapDataError('Некорректная структура файла.')
-  if (raw.format !== MAPDATA_FORMAT) throw new MapDataError('Это не файл GeoLists .mapdata.')
-  if (raw.version !== MAPDATA_VERSION) throw new MapDataError('Версия файла не поддерживается.')
-  if (!isRecord(raw.list) || !Array.isArray(raw.points)) throw new MapDataError('В файле отсутствует список или массив точек.')
-  if (raw.points.length > MAX_MAPDATA_POINTS) throw new MapDataError(`Файл содержит более ${MAX_MAPDATA_POINTS} точек.`)
+  try { raw = JSON.parse(text) } catch { throw new MapDataError('The file is not valid JSON.') }
+  if (!isRecord(raw)) throw new MapDataError('Invalid file structure.')
+  if (raw.format !== MAPDATA_FORMAT) throw new MapDataError('This is not a GeoLists .mapdata file.')
+  if (raw.version !== MAPDATA_VERSION) throw new MapDataError('The file version is not supported.')
+  if (!isRecord(raw.list) || !Array.isArray(raw.points)) throw new MapDataError('The file does not contain a list or points array.')
+  if (raw.points.length > MAX_MAPDATA_POINTS) throw new MapDataError(`The file contains more than ${MAX_MAPDATA_POINTS} points.`)
   const checksum = raw.checksum
-  if (typeof checksum !== 'string' || !/^[a-f0-9]{64}$/.test(checksum)) throw new MapDataError('Некорректная контрольная сумма.')
+  if (typeof checksum !== 'string' || !/^[a-f0-9]{64}$/.test(checksum)) throw new MapDataError('Invalid checksum.')
 
   const contentForHash = { format: raw.format, version: raw.version, list: raw.list, points: raw.points }
-  if ((await sha256(stableStringify(contentForHash))) !== checksum) throw new MapDataError('Контрольная сумма не совпадает: файл повреждён или изменён.')
+  if ((await sha256(stableStringify(contentForHash))) !== checksum) throw new MapDataError('Checksum mismatch: the file is corrupted or has been modified.')
 
   const listId = readString(raw.list, 'id')
-  if (!listId || listId.length > 100) throw new MapDataError('Некорректный ID списка.')
+  if (!listId || listId.length > 100) throw new MapDataError('Invalid list ID.')
   let name: string
   try { name = validateListName(readString(raw.list, 'name')) } catch (error) {
     if (error instanceof ValidationError) throw new MapDataError(error.message)
@@ -118,7 +118,7 @@ export async function parseMapData(text: string): Promise<MapDataContent> {
   const points = raw.points.map(validatePoint)
   const ids = new Set<string>([listId])
   for (const point of points) {
-    if (ids.has(point.id)) throw new MapDataError('В файле обнаружены повторяющиеся ID.')
+    if (ids.has(point.id)) throw new MapDataError('The file contains duplicate IDs.')
     ids.add(point.id)
   }
   return { format: MAPDATA_FORMAT, version: MAPDATA_VERSION, list: { id: listId, name, createdAt: readIsoDate(raw.list, 'createdAt'), updatedAt: readIsoDate(raw.list, 'updatedAt') }, points }
@@ -126,7 +126,7 @@ export async function parseMapData(text: string): Promise<MapDataContent> {
 
 export function buildTwoGisUrl(longitude: number, latitude: number) {
   if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180 || !Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
-    throw new MapDataError('Некорректные координаты для ссылки 2ГИС.')
+    throw new MapDataError('Invalid coordinates for the 2GIS link.')
   }
   return `https://2gis.ru/geo/${encodeURIComponent(`${longitude},${latitude}`)}`
 }

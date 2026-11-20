@@ -7,6 +7,7 @@
     "dev": "vite",
     "serve": "node server/map-server.mjs",
     "map:prepare": "bash scripts/prepare-spb-map.sh",
+    "map:manifest": "node scripts/generate-map-manifest.mjs",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run"

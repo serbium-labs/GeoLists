@@ -73,19 +73,19 @@ describe('GeoListsRepository', () => {
 
   it('отклоняет некорректные координаты', async () => {
     const list = await repository.createList('Поставщики')
-    await expect(repository.createPoint(list.id, { ...validPoint, latitude: Number.NaN })).rejects.toThrow('Широта')
-    await expect(repository.createPoint(list.id, { ...validPoint, longitude: 181 })).rejects.toThrow('Долгота')
+    await expect(repository.createPoint(list.id, { ...validPoint, latitude: Number.NaN })).rejects.toThrow('Latitude')
+    await expect(repository.createPoint(list.id, { ...validPoint, longitude: 181 })).rejects.toThrow('Longitude')
   })
 
   it('отклоняет пустые названия', async () => {
-    await expect(repository.createList('   ')).rejects.toThrow('Название списка')
+    await expect(repository.createList('   ')).rejects.toThrow('List name')
     const list = await repository.createList('Поставщики')
-    await expect(repository.createPoint(list.id, { ...validPoint, name: '\t' })).rejects.toThrow('Название точки')
+    await expect(repository.createPoint(list.id, { ...validPoint, name: '\t' })).rejects.toThrow('Point name')
   })
 
   it('отклоняет URL без http/https', async () => {
     const list = await repository.createList('Поставщики')
-    await expect(repository.createPoint(list.id, { ...validPoint, website: 'javascript:alert(1)' })).rejects.toThrow('http или https')
+    await expect(repository.createPoint(list.id, { ...validPoint, website: 'javascript:alert(1)' })).rejects.toThrow('http or https')
   })
 
   it('сохраняет и читает данные после повторного открытия IndexedDB', async () => {

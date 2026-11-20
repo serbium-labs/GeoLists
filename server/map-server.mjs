@@ -1,18 +1,21 @@
-import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream } from 'node:fs'
-import { access, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { access, mkdir, readFile, stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { extname, join, resolve } from 'node:path'
-import { pipeline } from 'node:stream/promises'
-import { Readable, Transform } from 'node:stream'
 import { contentTypeFor, parseByteRange, resolveStaticFile } from './http-utils.mjs'
+import { installMapArchive } from './map-installer.mjs'
+import { activeArchivePath, publicAvailable, validManifest } from './map-update-utils.mjs'
+import { httpHost } from './server-config.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const distDir = join(root, 'dist')
 const mapsDir = resolve(process.env.GEOLISTS_MAPS_DIR || join(root, 'data/maps'))
 const pointerPath = join(mapsDir, 'active.json')
 const port = Number(process.env.PORT || 4173)
-const updateManifestUrl = process.env.MAP_UPDATE_MANIFEST_URL || ''
+const host = httpHost(process.env)
+const updateConfigPath = join(root, 'config/map-updates.json')
+const updateConfig = await readFile(updateConfigPath, 'utf8').then(JSON.parse, () => ({ manifestUrl: '' }))
+const updateManifestUrl = process.env.MAP_UPDATE_MANIFEST_URL || updateConfig.manifestUrl || ''
 const state = { phase: 'idle', received: 0, total: 0, error: '', available: null }
 await mkdir(mapsDir, { recursive: true })
 
@@ -24,7 +27,8 @@ function sendJson(res, status, value) {
 async function activeInfo() {
   try {
     const info = JSON.parse(await readFile(pointerPath, 'utf8'))
-    const path = join(mapsDir, info.file)
+    const path = activeArchivePath(mapsDir, info.file)
+    if (!path || typeof info.version !== 'string') return null
     await access(path)
     return { ...info, path }
   } catch {
@@ -33,18 +37,12 @@ async function activeInfo() {
   }
 }
 
-function validManifest(value) {
-  return value && typeof value.version === 'string' && /^[\w.-]{1,80}$/.test(value.version)
-    && typeof value.url === 'string' && /^https:\/\//.test(value.url)
-    && typeof value.sha256 === 'string' && /^[a-f\d]{64}$/i.test(value.sha256)
-    && Number.isSafeInteger(value.size) && value.size > 0
-}
-
 async function checkUpdate() {
   if (!updateManifestUrl) throw new Error('MAP_UPDATE_MANIFEST_URL не настроен')
   if (!/^https:\/\//.test(updateManifestUrl)) throw new Error('URL манифеста должен использовать HTTPS')
   const response = await fetch(updateManifestUrl, { cache: 'no-store', signal: AbortSignal.timeout(15_000) })
   if (!response.ok) throw new Error(`Манифест обновления: HTTP ${response.status}`)
+  if (!response.url.startsWith('https://')) throw new Error('Манифест перенаправлен на небезопасный URL')
   const manifest = await response.json()
   if (!validManifest(manifest)) throw new Error('Некорректный манифест обновления')
   const active = await activeInfo()
@@ -56,32 +54,18 @@ async function installUpdate() {
   if (['downloading', 'verifying'].includes(state.phase)) throw new Error('Обновление уже выполняется')
   const manifest = state.available || await checkUpdate()
   if (!manifest.updateAvailable) return
-  const temp = join(mapsDir, `.download-${process.pid}-${Date.now()}.pmtiles`)
-  const finalName = `spb-${manifest.version}.pmtiles`
-  const final = join(mapsDir, finalName)
   state.phase = 'downloading'; state.received = 0; state.total = manifest.size; state.error = ''
   try {
-    const response = await fetch(manifest.url, { signal: AbortSignal.timeout(3_600_000) })
-    if (!response.ok || !response.body) throw new Error(`Архив: HTTP ${response.status}`)
-    const length = Number(response.headers.get('content-length') || manifest.size)
-    if (length !== manifest.size) throw new Error('Размер архива не совпадает с манифестом')
-    const hash = createHash('sha256')
-    const meter = new Transform({ transform(chunk, _encoding, callback) { state.received += chunk.length; hash.update(chunk); callback(null, chunk) } })
-    await pipeline(Readable.fromWeb(response.body), meter, createWriteStream(temp, { flags: 'wx' }))
-    state.phase = 'verifying'
-    if (state.received !== manifest.size) throw new Error('Архив скачан не полностью')
-    if (hash.digest('hex').toLowerCase() !== manifest.sha256.toLowerCase()) throw new Error('SHA-256 архива не совпадает')
-    const header = Buffer.alloc(8); const handle = await open(temp, 'r')
-    await handle.read(header, 0, 8, 0); await handle.close()
-    if (header.subarray(0, 7).toString() !== 'PMTiles' || header[7] !== 3) throw new Error('Файл не является архивом PMTiles v3')
-    await rename(temp, final)
-    const pointerTemp = `${pointerPath}.tmp`
-    await writeFile(pointerTemp, JSON.stringify({ version: manifest.version, file: finalName, sha256: manifest.sha256, size: manifest.size }, null, 2))
-    await rename(pointerTemp, pointerPath)
+    await installMapArchive({
+      manifest,
+      mapsDir,
+      pointerPath,
+      onProgress(received, total) { state.received = received; state.total = total },
+      onPhase(phase) { state.phase = phase },
+    })
     state.available = { ...manifest, currentVersion: manifest.version, updateAvailable: false }
     state.phase = 'complete'
   } catch (error) {
-    await unlink(temp).catch(() => {})
     state.phase = 'failed'; state.error = error instanceof Error ? error.message : 'Ошибка обновления'
   }
 }
@@ -101,12 +85,22 @@ async function serveFile(req, res, path, cache = true) {
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', `http://${req.headers.host}`)
+    if (url.pathname === '/health' && req.method === 'GET') return sendJson(res, 200, { status: 'ok' })
     if (url.pathname === '/api/maps/status' && req.method === 'GET') {
       const active = await activeInfo()
-      return sendJson(res, 200, { ...state, active: active && { version: active.version, size: active.size }, updatesConfigured: Boolean(updateManifestUrl) })
+      return sendJson(res, 200, {
+        phase: state.phase,
+        received: state.received,
+        total: state.total,
+        error: state.error,
+        available: publicAvailable(state.available),
+        active: active && { version: active.version, size: active.size },
+        updatesConfigured: Boolean(updateManifestUrl),
+      })
     }
     if (url.pathname === '/api/maps/check' && req.method === 'POST') return sendJson(res, 200, await checkUpdate())
     if (url.pathname === '/api/maps/update' && req.method === 'POST') {
+      if (['downloading', 'verifying'].includes(state.phase)) return sendJson(res, 409, { error: 'Загрузка уже выполняется' })
       void installUpdate().catch((error) => { state.phase = 'failed'; state.error = error instanceof Error ? error.message : 'Ошибка обновления' })
       return sendJson(res, 202, { accepted: true })
     }
@@ -118,4 +112,4 @@ createServer(async (req, res) => {
     if (!file) return sendJson(res, 403, { error: 'Forbidden' })
     return serveFile(req, res, file, extname(file) !== '.html')
   } catch (error) { return sendJson(res, 500, { error: error instanceof Error ? error.message : 'Server error' }) }
-}).listen(port, '127.0.0.1', () => console.log(`GeoLists: http://127.0.0.1:${port}`))
+}).listen(port, host, () => console.log(`GeoLists: http://${host}:${port}`))

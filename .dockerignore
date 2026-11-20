@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+node_modules
+dist
+data
+public/maps
+*.pmtiles
+*.log
+.DS_Store
+coverage
+tmp
+temp
+spb-latest.json
