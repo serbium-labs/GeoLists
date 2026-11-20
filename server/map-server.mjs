@@ -4,6 +4,7 @@ import { createServer } from 'node:http'
 import { extname, join, resolve } from 'node:path'
 import { contentTypeFor, parseByteRange, resolveStaticFile } from './http-utils.mjs'
 import { installMapArchive } from './map-installer.mjs'
+import { authorizeMapApiMutation, isMapApiMutation } from './map-api-security.mjs'
 import { activeArchivePath, publicAvailable, validManifest } from './map-update-utils.mjs'
 import { httpHost } from './server-config.mjs'
 
@@ -22,6 +23,16 @@ await mkdir(mapsDir, { recursive: true })
 function sendJson(res, status, value) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
   res.end(JSON.stringify(value))
+}
+
+function authorizeMapMutation(req, res) {
+  const authorization = authorizeMapApiMutation(req)
+  if (authorization.allowed) {
+    return true
+  }
+
+  sendJson(res, authorization.status, { error: authorization.error })
+  return false
 }
 
 async function activeInfo() {
@@ -85,6 +96,10 @@ async function serveFile(req, res, path, cache = true) {
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', `http://${req.headers.host}`)
+    if (isMapApiMutation(req.method, url.pathname) && !authorizeMapMutation(req, res)) {
+      return
+    }
+
     if (url.pathname === '/health' && req.method === 'GET') return sendJson(res, 200, { status: 'ok' })
     if (url.pathname === '/api/maps/status' && req.method === 'GET') {
       const active = await activeInfo()
@@ -98,7 +113,9 @@ createServer(async (req, res) => {
         updatesConfigured: Boolean(updateManifestUrl),
       })
     }
-    if (url.pathname === '/api/maps/check' && req.method === 'POST') return sendJson(res, 200, await checkUpdate())
+    if (url.pathname === '/api/maps/check' && req.method === 'POST') {
+      return sendJson(res, 200, await checkUpdate())
+    }
     if (url.pathname === '/api/maps/update' && req.method === 'POST') {
       if (['downloading', 'verifying'].includes(state.phase)) return sendJson(res, 409, { error: 'Загрузка уже выполняется' })
       void installUpdate().catch((error) => { state.phase = 'failed'; state.error = error instanceof Error ? error.message : 'Ошибка обновления' })

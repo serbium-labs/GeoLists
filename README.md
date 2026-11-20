@@ -133,6 +133,8 @@ A local server is required for offline use after installation: opening `index.ht
 - Noto Sans glyphs are distributed under the SIL Open Font License; the script downloads the license alongside the files.
 - A zoom-15 archive should not be expected to contain details available only at zoom 16+. Its size depends on the build date and bounding box.
 - The server listens only on `127.0.0.1`. Shared access requires TLS, authentication, and a reverse proxy.
+- Map update POST endpoints require the `X-GeoLists-CSRF: 1` header. Direct loopback access is allowed without a bearer token. The Docker Compose configuration explicitly enables local-only access because its published port is bound to `127.0.0.1`.
+- An externally accessible deployment must set `MAP_UPDATE_API_TOKEN`, remove `MAP_UPDATE_API_LOCAL_ONLY`, and configure the TLS reverse proxy to inject `Authorization: Bearer <token>` for `/api/maps/check` and `/api/maps/update`. The token must remain server-side and must never be exposed to browser code.
 
 ## Checks
 

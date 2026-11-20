@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
+const MAP_MUTATION_HEADERS = { 'x-geolists-csrf': '1' }
+
 export type MapUpdateStatus = {
   phase: 'idle' | 'downloading' | 'verifying' | 'complete' | 'failed'
   received: number
@@ -47,7 +49,7 @@ export function MapUpdates({ onInstalled }: Props) {
     setBusy(true)
     if (!silent) setMessage('')
     try {
-      const response = await fetch('/api/maps/check', { method: 'POST' })
+      const response = await fetch('/api/maps/check', { method: 'POST', headers: MAP_MUTATION_HEADERS })
       const value = await response.json() as { version?: string; updateAvailable?: boolean; error?: string }
       if (!response.ok) throw new Error(value.error || 'Failed to check the map')
       if (!silent) setMessage(value.updateAvailable ? `Version ${value.version} is available` : 'The latest version is installed')
@@ -78,7 +80,7 @@ export function MapUpdates({ onInstalled }: Props) {
   const update = async () => {
     setBusy(true); setMessage('')
     try {
-      const response = await fetch('/api/maps/update', { method: 'POST' })
+      const response = await fetch('/api/maps/update', { method: 'POST', headers: MAP_MUTATION_HEADERS })
       const value = await response.json() as { error?: string }
       if (!response.ok) throw new Error(value.error || 'Failed to start download')
       await refresh()
