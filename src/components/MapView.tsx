@@ -5,16 +5,25 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { getMapStyle, inspectLocalArchive, localArchiveErrorMessage } from '../config/mapSources'
+import {
+  beginMapSourceSwitch,
+  completeMapSourceSwitch,
+  failMapSourceSwitch,
+  initialMapSourceState,
+  isMapSourceActive,
+  type MapSourceState,
+} from '../config/mapSourceSwitch'
 import { versionMapLibreWorkerUrl } from '../config/mapWorker'
 import type { MapPoint } from '../types/data'
 import type { Coordinates, MapSourceMode } from '../types/map'
 
 const SPB_CENTER: [number, number] = [30.3351, 59.9343]
+const STYLE_LOAD_TIMEOUT_MS = 15_000
 maplibregl.setWorkerUrl(versionMapLibreWorkerUrl(maplibreWorkerUrl))
 const EMPTY_STYLE = { version: 8 as const, sources: {}, layers: [{ id: 'unavailable', type: 'background' as const, paint: { 'background-color': '#e5e9e4' } }] }
 
 interface Props {
-  mode: MapSourceMode
+  requestedMode: MapSourceMode
   mapRevision: string
   points: MapPoint[]
   activeListId: string | null
@@ -22,9 +31,10 @@ interface Props {
   onMapClick: (point: Coordinates) => void
   onPointOpen: (point: MapPoint) => void
   onRequestOnline: () => void
+  onSourceStateChange: (state: MapSourceState) => void
 }
 
-export function MapView({ mode, mapRevision, points, activeListId, focusedPoint, onMapClick, onPointOpen, onRequestOnline }: Props) {
+export function MapView({ requestedMode, mapRevision, points, activeListId, focusedPoint, onMapClick, onPointOpen, onRequestOnline, onSourceStateChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const markersRef = useRef(new Map<string, Marker>())
@@ -32,16 +42,16 @@ export function MapView({ mode, mapRevision, points, activeListId, focusedPoint,
   const onPointOpenRef = useRef(onPointOpen)
   const pointsRef = useRef(points)
   const activeListIdRef = useRef(activeListId)
-  const appliedModeRef = useRef<MapSourceMode | null>(null)
-  const appliedRevisionRef = useRef('')
-  const requestedModeRef = useRef(mode)
-  const [error, setError] = useState<string | null>(null)
-  const [loadingMap, setLoadingMap] = useState(true)
+  const sourceStateRef = useRef(initialMapSourceState(requestedMode, mapRevision))
+  const activeStyleRef = useRef<ReturnType<MapLibreMap['getStyle']> | null>(null)
+  const onSourceStateChangeRef = useRef(onSourceStateChange)
+  const [sourceState, setSourceState] = useState(sourceStateRef.current)
 
   useEffect(() => { onMapClickRef.current = onMapClick }, [onMapClick])
   useEffect(() => { onPointOpenRef.current = onPointOpen }, [onPointOpen])
   useEffect(() => { pointsRef.current = points }, [points])
   useEffect(() => { activeListIdRef.current = activeListId }, [activeListId])
+  useEffect(() => { onSourceStateChangeRef.current = onSourceStateChange }, [onSourceStateChange])
   useEffect(() => {
     const protocol = new Protocol()
     maplibregl.addProtocol('pmtiles', protocol.tile)
@@ -55,14 +65,6 @@ export function MapView({ mode, mapRevision, points, activeListId, focusedPoint,
     map.on('click', (event) => {
       if (activeListIdRef.current) onMapClickRef.current({ longitude: event.lngLat.lng, latitude: event.lngLat.lat })
     })
-    map.on('error', (event) => {
-      const detail = event.error?.message ? ` ${event.error.message}` : ''
-      const message = requestedModeRef.current === 'online'
-        ? `The online map failed to load. Check your internet connection and access to OpenFreeMap.${detail}`
-        : `The local map could not be displayed. Check the PMTiles archive and local server.${detail}`
-      setLoadingMap(false)
-      setError(message)
-    })
     mapRef.current = map
     return () => {
       markersRef.current.forEach((marker) => marker.remove())
@@ -74,43 +76,106 @@ export function MapView({ mode, mapRevision, points, activeListId, focusedPoint,
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map) return
-    requestedModeRef.current = mode
-    if (appliedModeRef.current === mode && (mode !== 'local' || appliedRevisionRef.current === mapRevision)) {
-      setLoadingMap(false)
-      setError(null)
+    if (!map) {
       return
     }
+    const currentMap: MapLibreMap = map
+    const started = beginMapSourceSwitch(sourceStateRef.current, requestedMode, mapRevision)
+    sourceStateRef.current = started
+    setSourceState(started)
+    onSourceStateChangeRef.current(started)
+    if (isMapSourceActive(started, requestedMode, mapRevision)) {
+      const completed = completeMapSourceSwitch(started, started.requestId)
+      sourceStateRef.current = completed
+      setSourceState(completed)
+      onSourceStateChangeRef.current(completed)
+      return
+    }
+
+    const requestId = started.requestId
     const controller = new AbortController()
-    const applySource = async () => {
-      setLoadingMap(true)
-      setError(null)
-      if (mode === 'local') {
+    let styleLoadTimer: number | undefined
+    let listeningForStyle = false
+    let disposed = false
+
+    const stopWaitingForStyle = (): void => {
+      if (styleLoadTimer !== undefined) {
+        window.clearTimeout(styleLoadTimer)
+      }
+      if (listeningForStyle) {
+        currentMap.off('style.load', handleStyleLoad)
+      }
+      styleLoadTimer = undefined
+      listeningForStyle = false
+    }
+
+    const restoreActiveStyle = (): void => {
+      const fallbackStyle = activeStyleRef.current
+      currentMap.setStyle(fallbackStyle ?? EMPTY_STYLE)
+    }
+
+    const fail = (message: string): void => {
+      if (disposed) {
+        return
+      }
+      const failed = failMapSourceSwitch(sourceStateRef.current, requestId, message)
+      if (failed === sourceStateRef.current) {
+        return
+      }
+      stopWaitingForStyle()
+      sourceStateRef.current = failed
+      setSourceState(failed)
+      onSourceStateChangeRef.current(failed)
+      restoreActiveStyle()
+    }
+
+    function handleStyleLoad(): void {
+      if (disposed) {
+        return
+      }
+      const completed = completeMapSourceSwitch(sourceStateRef.current, requestId)
+      if (completed === sourceStateRef.current) {
+        return
+      }
+      stopWaitingForStyle()
+      activeStyleRef.current = currentMap.getStyle()
+      sourceStateRef.current = completed
+      setSourceState(completed)
+      onSourceStateChangeRef.current(completed)
+    }
+
+    const applySource = async (): Promise<void> => {
+      if (requestedMode === 'local') {
         const archive = await inspectLocalArchive(controller.signal, mapRevision)
         if (!archive.available) {
-          setLoadingMap(false)
-          setError(localArchiveErrorMessage(archive))
+          fail(localArchiveErrorMessage(archive))
           return
         }
       }
       if (!controller.signal.aborted) {
-        map.once('style.load', () => {
-          if (requestedModeRef.current !== mode) return
-          appliedModeRef.current = mode
-          appliedRevisionRef.current = mapRevision
-          setLoadingMap(false)
-          setError(null)
-        })
-        map.setStyle(getMapStyle(mode, mapRevision))
+        listeningForStyle = true
+        currentMap.on('style.load', handleStyleLoad)
+        styleLoadTimer = window.setTimeout(() => {
+          const message = requestedMode === 'online'
+            ? 'The online map failed to load. Check your internet connection and access to OpenFreeMap.'
+            : 'The local map could not be displayed. Check the PMTiles archive and local server.'
+          fail(message)
+        }, STYLE_LOAD_TIMEOUT_MS)
+        currentMap.setStyle(getMapStyle(requestedMode, mapRevision))
       }
     }
     void applySource().catch((reason: unknown) => {
-      if (reason instanceof DOMException && reason.name === 'AbortError') return
-      setLoadingMap(false)
-      setError(mode === 'online' ? 'Could not connect to the online map.' : 'Could not connect to the local map.')
+      if (reason instanceof DOMException && reason.name === 'AbortError') {
+        return
+      }
+      fail(requestedMode === 'online' ? 'Could not connect to the online map.' : 'Could not connect to the local map.')
     })
-    return () => controller.abort()
-  }, [mode, mapRevision])
+    return () => {
+      disposed = true
+      controller.abort()
+      stopWaitingForStyle()
+    }
+  }, [requestedMode, mapRevision])
 
   useEffect(() => {
     const map = mapRef.current
@@ -143,8 +208,8 @@ export function MapView({ mode, mapRevision, points, activeListId, focusedPoint,
 
   return <main className="map-area">
     <div ref={containerRef} className="map-container" aria-label="Interactive map of Saint Petersburg" />
-    {loadingMap && !error && <div className="map-loading" role="status">Loading {mode === 'online' ? 'online map' : 'local map'}…</div>}
-    {error && <div className="map-error" role="alert"><strong>Map unavailable</strong><span>{error}</span>{mode === 'local' && <button type="button" onClick={onRequestOnline}>Switch to online map</button>}</div>}
+    {sourceState.phase === 'loading' && <div className="map-loading" role="status">Loading {sourceState.requestedMode === 'online' ? 'online map' : 'local map'}…</div>}
+    {sourceState.phase === 'failed' && <div className="map-error" role="alert"><strong>Map unavailable</strong><span>{sourceState.error}</span>{sourceState.activeMode && <span>The {sourceState.activeMode} map remains active.</span>}{sourceState.requestedMode === 'local' && <button type="button" onClick={onRequestOnline}>Switch to online map</button>}</div>}
     {!activeListId && <div className="map-hint">Create or select a list to add points</div>}
   </main>
 }

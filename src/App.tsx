@@ -6,6 +6,7 @@ import { repository } from './storage/database'
 import { ValidationError } from './storage/validation'
 import type { MapList, MapPoint, PointFields } from './types/data'
 import type { Coordinates, MapSourceMode } from './types/map'
+import { initialMapSourceState, type MapSourceState } from './config/mapSourceSwitch'
 import { createMapData, MAX_MAPDATA_BYTES, parseMapData, safeMapDataFilename, type MapDataContent } from './exchange/mapdata'
 
 function messageFrom(error: unknown) {
@@ -14,9 +15,16 @@ function messageFrom(error: unknown) {
 }
 
 export default function App() {
-  const [mode, setModeState] = useState<MapSourceMode>(() => localStorage.getItem('geolists.mapMode') === 'local' ? 'local' : 'online')
+  const [requestedMode, setRequestedMode] = useState<MapSourceMode>(() => localStorage.getItem('geolists.mapMode') === 'local' ? 'local' : 'online')
+  const [mapSourceState, setMapSourceState] = useState<MapSourceState>(() => initialMapSourceState(requestedMode, ''))
   const [mapRevision, setMapRevision] = useState('')
-  const setMode = (next: MapSourceMode) => { localStorage.setItem('geolists.mapMode', next); setModeState(next) }
+  const requestMapMode = (next: MapSourceMode): void => setRequestedMode(next)
+  const handleMapSourceState = useCallback((next: MapSourceState) => {
+    setMapSourceState(next)
+    if (next.phase === 'active' && next.activeMode) {
+      localStorage.setItem('geolists.mapMode', next.activeMode)
+    }
+  }, [])
   const [lists, setLists] = useState<MapList[]>([])
   const [points, setPoints] = useState<MapPoint[]>([])
   const [pointCounts, setPointCounts] = useState<Record<string, number>>({})
@@ -143,8 +151,8 @@ export default function App() {
 
   const panelCoordinates = editingPoint ?? draftCoordinates
   return <div className="app-shell">
-    <Sidebar mode={mode} lists={lists} pointCounts={pointCounts} activeListId={activeListId} points={points} loading={loading} onModeChange={setMode} onCreateList={() => void createList()} onSelectList={setActiveListId} onRenameList={(list) => void renameList(list)} onDeleteList={(list) => void deleteList(list)} onOpenPoint={openPoint} onExport={() => void exportList()} onImport={(file) => void prepareImport(file)} onMapInstalled={(version) => { setMapRevision(version); setMode('local') }} />
-    <MapView mode={mode} mapRevision={mapRevision} points={points} activeListId={activeListId} focusedPoint={focusedPoint} onMapClick={(coordinates) => { setError(null); setEditingPoint(null); setDraftCoordinates(coordinates) }} onPointOpen={openPoint} onRequestOnline={() => setMode('online')} />
+    <Sidebar requestedMode={requestedMode} mapSourceState={mapSourceState} lists={lists} pointCounts={pointCounts} activeListId={activeListId} points={points} loading={loading} onModeChange={requestMapMode} onCreateList={() => void createList()} onSelectList={setActiveListId} onRenameList={(list) => void renameList(list)} onDeleteList={(list) => void deleteList(list)} onOpenPoint={openPoint} onExport={() => void exportList()} onImport={(file) => void prepareImport(file)} onMapInstalled={(version) => { setMapRevision(version); requestMapMode('local') }} />
+    <MapView requestedMode={requestedMode} mapRevision={mapRevision} points={points} activeListId={activeListId} focusedPoint={focusedPoint} onMapClick={(coordinates) => { setError(null); setEditingPoint(null); setDraftCoordinates(coordinates) }} onPointOpen={openPoint} onRequestOnline={() => requestMapMode('online')} onSourceStateChange={handleMapSourceState} />
     {error && !panelCoordinates && <div className="app-error" role="alert">{error}<button type="button" onClick={() => setError(null)}>×</button></div>}
     {panelCoordinates && <PointPanel point={editingPoint} coordinates={panelCoordinates} error={error} saving={saving} onClose={() => { setDraftCoordinates(null); setEditingPoint(null); setError(null) }} onSave={(fields) => void savePoint(fields)} onDelete={editingPoint ? () => void deletePoint() : null} />}
     {importPreview && <div className="panel-backdrop"><section className="import-preview" role="dialog" aria-modal="true" aria-labelledby="import-title"><h2 id="import-title">Import preview</h2><dl><div><dt>List name</dt><dd>{importPreview.list.name}</dd></div><div><dt>Number of points</dt><dd>{importPreview.points.length}</dd></div></dl><p>The list and its points will be added with new identifiers. Existing data will not be changed.</p>{error && <p className="form-error">{error}</p>}<div className="form-actions"><span /><button className="secondary-button" type="button" onClick={() => setImportPreview(null)}>Cancel</button><button className="primary-button" type="button" disabled={saving} onClick={() => void confirmImport()}>{saving ? 'Importing…' : 'Import'}</button></div></section></div>}
