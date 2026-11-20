@@ -1,11 +1,13 @@
 import { MAP_SOURCES } from '../config/mapSources'
 import type { MapList, MapPoint } from '../types/data'
 import type { MapSourceMode } from '../types/map'
+import type { MapSourceState } from '../config/mapSourceSwitch'
 import { formatCoordinates } from '../utils/coordinates'
 import { MapUpdates } from './MapUpdates'
 
 interface Props {
-  mode: MapSourceMode
+  requestedMode: MapSourceMode
+  mapSourceState: MapSourceState
   lists: MapList[]
   pointCounts: Record<string, number>
   activeListId: string | null
@@ -22,8 +24,21 @@ interface Props {
   onMapInstalled: (version: string) => void
 }
 
+function mapSourceStatusText(requestedMode: MapSourceMode, state: MapSourceState): string {
+  if (state.phase === 'loading') {
+    return `Loading ${MAP_SOURCES[requestedMode].label} map…`
+  }
+
+  if (state.phase === 'failed') {
+    const activeMessage = state.activeMode ? ` ${MAP_SOURCES[state.activeMode].label} remains active.` : ''
+    return `${MAP_SOURCES[requestedMode].label} map unavailable.${activeMessage}`
+  }
+
+  return `${MAP_SOURCES[state.activeMode ?? requestedMode].label} map active.`
+}
+
 export function Sidebar(props: Props) {
-  const { mode, lists, pointCounts, activeListId, points, loading } = props
+  const { requestedMode, mapSourceState, lists, pointCounts, activeListId, points, loading } = props
   return <aside className="sidebar">
     <header className="brand"><div className="brand-mark" aria-hidden="true">G</div><div><h1>GeoLists</h1><p>Saint Petersburg</p></div></header>
     <section className="sidebar-section lists-section">
@@ -50,7 +65,11 @@ export function Sidebar(props: Props) {
     </section>}
 
     <section className="sidebar-section source-section"><h2>Map source</h2><div className="source-switch" role="radiogroup" aria-label="Map source">
-      {(Object.keys(MAP_SOURCES) as MapSourceMode[]).map((sourceMode) => <button key={sourceMode} type="button" role="radio" aria-checked={mode === sourceMode} className={mode === sourceMode ? 'active' : ''} onClick={() => props.onModeChange(sourceMode)}>{MAP_SOURCES[sourceMode].label}</button>)}
-    </div><MapUpdates onInstalled={props.onMapInstalled} /></section>
+      {(Object.keys(MAP_SOURCES) as MapSourceMode[]).map((sourceMode) => {
+        const active = mapSourceState.activeMode === sourceMode
+        const pending = mapSourceState.phase === 'loading' && requestedMode === sourceMode
+        return <button key={sourceMode} type="button" role="radio" aria-checked={active} aria-busy={pending} className={`${active ? 'active' : ''} ${pending ? 'pending' : ''}`.trim()} onClick={() => props.onModeChange(sourceMode)}>{MAP_SOURCES[sourceMode].label}</button>
+      })}
+    </div><p className={`source-status ${mapSourceState.phase}`} role="status">{mapSourceStatusText(requestedMode, mapSourceState)}</p><MapUpdates onInstalled={props.onMapInstalled} /></section>
   </aside>
 }

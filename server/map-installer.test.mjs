@@ -24,6 +24,8 @@ async function fixture() {
     url: 'https://github.com/owner/repo/releases/download/maps-v1/spb.pmtiles',
     sha256: createHash('sha256').update(archive).digest('hex'),
     size: archive.length,
+    bounds: [29.4, 59.63, 31.05, 60.25],
+    maxZoom: 15,
   }
   return { mapsDir, pointerPath, archive, manifest }
 }
@@ -37,6 +39,24 @@ describe('safe map installation', () => {
     expect(await readFile(join(mapsDir, result.file))).toEqual(archive)
     expect(JSON.parse(await readFile(pointerPath, 'utf8'))).toEqual(result)
     expect(onProgress).toHaveBeenLastCalledWith(archive.length, archive.length)
+  })
+
+  it('runs capacity checks before starting the network request', async () => {
+    const { mapsDir, pointerPath, manifest } = await fixture()
+    const fetchImpl = vi.fn()
+    const beforeDownload = vi.fn(async () => {
+      throw new Error('Not enough free disk space for the map download')
+    })
+
+    await expect(installMapArchive({
+      manifest,
+      mapsDir,
+      pointerPath,
+      fetchImpl,
+      beforeDownload,
+    })).rejects.toThrow('Not enough free disk space')
+    expect(beforeDownload).toHaveBeenCalledOnce()
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it('keeps the active pointer and removes the download when SHA-256 is wrong', async () => {
