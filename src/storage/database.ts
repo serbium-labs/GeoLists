@@ -3,6 +3,11 @@ import type { MapList, MapPoint, PointFields } from '../types/data'
 import { validateListName, validatePointFields } from './validation'
 import type { MapDataContent } from '../exchange/mapdata'
 
+export type ListsWithPointCounts = {
+  lists: MapList[]
+  pointCounts: Record<string, number>
+}
+
 export class GeoListsDatabase extends Dexie {
   lists!: EntityTable<MapList, 'id'>
   points!: EntityTable<MapPoint, 'id'>
@@ -21,6 +26,21 @@ export class GeoListsRepository {
 
   async getLists() {
     return this.db.lists.orderBy('createdAt').toArray()
+  }
+
+  async getListsWithPointCounts(): Promise<ListsWithPointCounts> {
+    return this.db.transaction('r', this.db.lists, this.db.points, async () => {
+      const lists = await this.getLists()
+      const pointCounts = Object.fromEntries(lists.map((list) => [list.id, 0])) as Record<string, number>
+
+      await this.db.points.orderBy('listId').eachKey((listId) => {
+        if (typeof listId === 'string' && Object.hasOwn(pointCounts, listId)) {
+          pointCounts[listId] += 1
+        }
+      })
+
+      return { lists, pointCounts }
+    })
   }
 
   async getPoints(listId: string) {

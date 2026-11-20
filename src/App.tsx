@@ -7,6 +7,7 @@ import { repository } from './storage/database'
 import { ValidationError } from './storage/validation'
 import type { MapList, MapPoint, PointFields } from './types/data'
 import type { Coordinates, MapSourceMode } from './types/map'
+import { initialMapSourceState, type MapSourceState } from './config/mapSourceSwitch'
 import { createMapData, MAX_MAPDATA_BYTES, parseMapData, safeMapDataFilename, type MapDataContent } from './exchange/mapdata'
 
 function messageFrom(error: unknown) {
@@ -15,9 +16,16 @@ function messageFrom(error: unknown) {
 }
 
 export default function App() {
-  const [mode, setModeState] = useState<MapSourceMode>(() => localStorage.getItem('geolists.mapMode') === 'local' ? 'local' : 'online')
+  const [requestedMode, setRequestedMode] = useState<MapSourceMode>(() => localStorage.getItem('geolists.mapMode') === 'local' ? 'local' : 'online')
+  const [mapSourceState, setMapSourceState] = useState<MapSourceState>(() => initialMapSourceState(requestedMode, ''))
   const [mapRevision, setMapRevision] = useState('')
-  const setMode = (next: MapSourceMode) => { localStorage.setItem('geolists.mapMode', next); setModeState(next) }
+  const requestMapMode = (next: MapSourceMode): void => setRequestedMode(next)
+  const handleMapSourceState = useCallback((next: MapSourceState) => {
+    setMapSourceState(next)
+    if (next.phase === 'active' && next.activeMode) {
+      localStorage.setItem('geolists.mapMode', next.activeMode)
+    }
+  }, [])
   const [lists, setLists] = useState<MapList[]>([])
   const [points, setPoints] = useState<MapPoint[]>([])
   const [pointCounts, setPointCounts] = useState<Record<string, number>>({})
@@ -31,10 +39,9 @@ export default function App() {
   const [importPreview, setImportPreview] = useState<MapDataContent | null>(null)
 
   const refreshLists = useCallback(async () => {
-    const nextLists: MapList[] = await repository.getLists()
-    const counts = await Promise.all(nextLists.map(async (list) => [list.id, (await repository.getPoints(list.id)).length] as const))
+    const { lists: nextLists, pointCounts: nextPointCounts } = await repository.getListsWithPointCounts()
     setLists(nextLists)
-    setPointCounts(Object.fromEntries(counts))
+    setPointCounts(nextPointCounts)
     setActiveListId((current) => current && nextLists.some((list: MapList) => list.id === current) ? current : nextLists[0]?.id ?? null)
   }, [])
 
@@ -77,10 +84,16 @@ export default function App() {
     setSaving(true)
     setError(null)
     try {
-      if (editingPoint) await repository.updatePoint(activeListId, editingPoint.id, fields)
-      else await repository.createPoint(activeListId, fields)
-      setPoints(await repository.getPoints(activeListId))
-      await refreshLists()
+      if (editingPoint) {
+        const updatedPoint = await repository.updatePoint(activeListId, editingPoint.id, fields)
+        setPoints((current) => current.map((point) => point.id === updatedPoint.id ? updatedPoint : point))
+        setFocusedPoint((current) => current?.id === updatedPoint.id ? updatedPoint : current)
+      } else {
+        const createdPoint = await repository.createPoint(activeListId, fields)
+        setPoints((current) => [...current, createdPoint])
+        setPointCounts((current) => ({ ...current, [activeListId]: (current[activeListId] ?? 0) + 1 }))
+      }
+
       setDraftCoordinates(null)
       setEditingPoint(null)
     } catch (reason) { setError(messageFrom(reason)) } finally { setSaving(false) }
@@ -91,8 +104,8 @@ export default function App() {
     try {
       setError(null)
       await repository.deletePoint(activeListId, editingPoint.id)
-      setPoints(await repository.getPoints(activeListId))
-      await refreshLists()
+      setPoints((current) => current.filter((point) => point.id !== editingPoint.id))
+      setPointCounts((current) => ({ ...current, [activeListId]: Math.max(0, (current[activeListId] ?? 0) - 1) }))
       setEditingPoint(null)
       setFocusedPoint(null)
     } catch (reason) { setError(messageFrom(reason)) }
@@ -144,8 +157,8 @@ export default function App() {
 
   const panelCoordinates = editingPoint ?? draftCoordinates
   return <div className="app-shell">
-    <Sidebar mode={mode} lists={lists} pointCounts={pointCounts} activeListId={activeListId} points={points} loading={loading} onModeChange={setMode} onCreateList={() => void createList()} onSelectList={setActiveListId} onRenameList={(list) => void renameList(list)} onDeleteList={(list) => void deleteList(list)} onOpenPoint={openPoint} onExport={() => void exportList()} onImport={(file) => void prepareImport(file)} onMapInstalled={(version) => { setMapRevision(version); setMode('local') }} />
-    <MapView mode={mode} mapRevision={mapRevision} points={points} activeListId={activeListId} focusedPoint={focusedPoint} onMapClick={(coordinates) => { setError(null); setEditingPoint(null); setDraftCoordinates(coordinates) }} onPointOpen={openPoint} onRequestOnline={() => setMode('online')} />
+    <Sidebar requestedMode={requestedMode} mapSourceState={mapSourceState} lists={lists} pointCounts={pointCounts} activeListId={activeListId} points={points} loading={loading} onModeChange={requestMapMode} onCreateList={() => void createList()} onSelectList={setActiveListId} onRenameList={(list) => void renameList(list)} onDeleteList={(list) => void deleteList(list)} onOpenPoint={openPoint} onExport={() => void exportList()} onImport={(file) => void prepareImport(file)} onMapInstalled={(version) => { setMapRevision(version); requestMapMode('local') }} />
+    <MapView requestedMode={requestedMode} mapRevision={mapRevision} points={points} activeListId={activeListId} focusedPoint={focusedPoint} onMapClick={(coordinates) => { setError(null); setEditingPoint(null); setDraftCoordinates(coordinates) }} onPointOpen={openPoint} onRequestOnline={() => requestMapMode('online')} onSourceStateChange={handleMapSourceState} />
     {error && !panelCoordinates && <div className="app-error" role="alert">{error}<button type="button" aria-label="Dismiss error" onClick={() => setError(null)}>×</button></div>}
     {panelCoordinates && <PointPanel point={editingPoint} coordinates={panelCoordinates} error={error} saving={saving} onClose={() => { setDraftCoordinates(null); setEditingPoint(null); setError(null) }} onSave={(fields) => void savePoint(fields)} onDelete={editingPoint ? () => void deletePoint() : null} />}
     {importPreview && <ImportPreviewDialog preview={importPreview} error={error} saving={saving} onCancel={() => setImportPreview(null)} onConfirm={() => void confirmImport()} />}

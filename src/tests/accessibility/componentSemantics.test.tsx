@@ -31,13 +31,24 @@ describe('component accessibility semantics', () => {
   })
 
   it('announces list loading and exposes a roving map-source radio group', () => {
-    const markup = renderToStaticMarkup(<Sidebar mode="online" lists={[]} pointCounts={{}} activeListId={null} points={[]} loading onModeChange={vi.fn()} onCreateList={vi.fn()} onSelectList={vi.fn()} onRenameList={vi.fn()} onDeleteList={vi.fn()} onOpenPoint={vi.fn()} onExport={vi.fn()} onImport={vi.fn()} onMapInstalled={vi.fn()} />)
+    const mapSourceState = {
+      requestId: 1,
+      requestedMode: 'online' as const,
+      requestedRevision: '',
+      activeMode: 'online' as const,
+      activeRevision: '',
+      phase: 'active' as const,
+      error: null,
+    }
+    const markup = renderToStaticMarkup(<Sidebar requestedMode="online" mapSourceState={mapSourceState} lists={[]} pointCounts={{}} activeListId={null} points={[]} loading onModeChange={vi.fn()} onCreateList={vi.fn()} onSelectList={vi.fn()} onRenameList={vi.fn()} onDeleteList={vi.fn()} onOpenPoint={vi.fn()} onExport={vi.fn()} onImport={vi.fn()} onMapInstalled={vi.fn()} />)
 
     expect(markup).toContain('aria-label="Loading lists"')
     expect(markup).toContain('role="radiogroup"')
     expect(markup).toContain('id="map-source-online"')
-    expect(markup).toContain('aria-checked="true" tabindex="0"')
+    expect(markup).toContain('aria-checked="true"')
+    expect(markup).toContain('tabindex="0"')
     expect(markup).toContain('id="map-source-local"')
-    expect(markup).toContain('aria-checked="false" tabindex="-1"')
+    expect(markup).toContain('aria-checked="false"')
+    expect(markup).toContain('tabindex="-1"')
   })
 })

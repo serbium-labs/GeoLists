@@ -3,6 +3,12 @@
   --skeleton-base: #e8ece8;
   --skeleton-highlight: #f4f6f3;
   --skeleton-animation-duration: 1.4s;
+  --map-source-pending-color: #305f9a;
+  --map-source-error-color: #8b3128;
+  --map-source-status-color: #68766e;
+  --map-source-status-spacing: 8px;
+  --map-source-status-font-size: 11px;
+  --map-source-status-line-height: 1.4;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #17241e;
   background: #dfe5df;
@@ -54,6 +60,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .source-switch { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 9px; background: #e8ece8; }
 .source-switch button { padding: 8px; border: 0; border-radius: 7px; color: #647169; background: transparent; cursor: pointer; font-size: 12px; }
 .source-switch button.active { color: #155b40; background: white; box-shadow: 0 1px 5px rgb(23 48 36 / 10%); font-weight: 650; }
+.source-switch button.pending { color: var(--map-source-pending-color); }
+.source-status { margin: var(--map-source-status-spacing) 0 0; color: var(--map-source-status-color); font-size: var(--map-source-status-font-size); line-height: var(--map-source-status-line-height); }
+.source-status.failed { color: var(--map-source-error-color); }
 .map-updates { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; color: #68766e; font-size: 11px; }
 .map-updates p { margin: 0; }
 .map-updates progress { width: 100%; accent-color: #1c6d4e; }
