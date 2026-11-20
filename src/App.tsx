@@ -38,10 +38,9 @@ export default function App() {
   const [importPreview, setImportPreview] = useState<MapDataContent | null>(null)
 
   const refreshLists = useCallback(async () => {
-    const nextLists: MapList[] = await repository.getLists()
-    const counts = await Promise.all(nextLists.map(async (list) => [list.id, (await repository.getPoints(list.id)).length] as const))
+    const { lists: nextLists, pointCounts: nextPointCounts } = await repository.getListsWithPointCounts()
     setLists(nextLists)
-    setPointCounts(Object.fromEntries(counts))
+    setPointCounts(nextPointCounts)
     setActiveListId((current) => current && nextLists.some((list: MapList) => list.id === current) ? current : nextLists[0]?.id ?? null)
   }, [])
 
@@ -84,10 +83,16 @@ export default function App() {
     setSaving(true)
     setError(null)
     try {
-      if (editingPoint) await repository.updatePoint(activeListId, editingPoint.id, fields)
-      else await repository.createPoint(activeListId, fields)
-      setPoints(await repository.getPoints(activeListId))
-      await refreshLists()
+      if (editingPoint) {
+        const updatedPoint = await repository.updatePoint(activeListId, editingPoint.id, fields)
+        setPoints((current) => current.map((point) => point.id === updatedPoint.id ? updatedPoint : point))
+        setFocusedPoint((current) => current?.id === updatedPoint.id ? updatedPoint : current)
+      } else {
+        const createdPoint = await repository.createPoint(activeListId, fields)
+        setPoints((current) => [...current, createdPoint])
+        setPointCounts((current) => ({ ...current, [activeListId]: (current[activeListId] ?? 0) + 1 }))
+      }
+
       setDraftCoordinates(null)
       setEditingPoint(null)
     } catch (reason) { setError(messageFrom(reason)) } finally { setSaving(false) }
@@ -98,8 +103,8 @@ export default function App() {
     try {
       setError(null)
       await repository.deletePoint(activeListId, editingPoint.id)
-      setPoints(await repository.getPoints(activeListId))
-      await refreshLists()
+      setPoints((current) => current.filter((point) => point.id !== editingPoint.id))
+      setPointCounts((current) => ({ ...current, [activeListId]: Math.max(0, (current[activeListId] ?? 0) - 1) }))
       setEditingPoint(null)
       setFocusedPoint(null)
     } catch (reason) { setError(messageFrom(reason)) }
