@@ -6,5 +6,6 @@ describe('document language', () => {
     const html = await readFile(new URL('../../../index.html', import.meta.url), 'utf8')
 
     expect(html).toContain('<html lang="en">')
+    expect(html).toContain('<title>GeoLists — Offline Maps Anywhere</title>')
   })
 })
