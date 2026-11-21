@@ -44,7 +44,7 @@ describe('custom offline regions', () => {
   })
 
   it('returns a deterministic positive estimate and geographic center', () => {
-    expect(estimateRegionSize(selection)).toBeGreaterThan(0)
+    expect(estimateRegionSize({ ...selection, bounds: [13.40, 52.51, 13.41, 52.52], maxZoom: 8 })).toBeGreaterThan(1_000_000)
     expect(estimateRegionSize({ ...selection, maxZoom: 14 })).toBeLessThan(estimateRegionSize(selection))
     expect(regionCenter([10, 20, 14, 24])).toEqual([12, 22])
   })

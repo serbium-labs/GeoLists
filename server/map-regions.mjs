@@ -3,10 +3,10 @@ import { createReadStream } from 'node:fs'
 import { access, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
-import { regionAreaKm2, validateDownloadLimits } from './map-storage.mjs'
+import { validateDownloadLimits } from './map-storage.mjs'
 
-const ESTIMATED_BYTES_PER_KM2_AT_ZOOM_15 = 18_000
 const ESTIMATE_SAFETY_FACTOR = 1.2
+const TILE_BYTES_BY_ZOOM = [131_072, 131_072, 131_072, 131_072, 131_072, 131_072, 131_072, 131_072, 131_072, 65_536, 65_536, 65_536, 32_768, 32_768, 16_384, 16_384]
 const MAX_REGION_NAME_LENGTH = 80
 const CUSTOM_REGION_ID_PATTERN = /^region-[a-f\d-]{36}$/
 const REGION_ID_PATTERN = /^(?:region-[a-f\d-]{36}|legacy)$/
@@ -54,9 +54,26 @@ export function validateRegionSelection(value, limits) {
 }
 
 export function estimateRegionSize({ bounds, maxZoom }) {
-  const zoomScale = 4 ** (maxZoom - 15)
-  const estimated = regionAreaKm2(bounds) * ESTIMATED_BYTES_PER_KM2_AT_ZOOM_15 * zoomScale * ESTIMATE_SAFETY_FACTOR
-  return Math.max(1, Math.ceil(estimated))
+  const [west, south, east, north] = bounds
+  let estimated = 0
+
+  for (let zoom = 0; zoom <= maxZoom; zoom += 1) {
+    const scale = 2 ** zoom
+    const xForLongitude = (longitude) => Math.min(scale - 1, Math.max(0, Math.floor((longitude + 180) / 360 * scale)))
+    const yForLatitude = (latitude) => {
+      const radians = latitude * Math.PI / 180
+      const projected = (1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians)) / Math.PI) / 2
+      return Math.min(scale - 1, Math.max(0, Math.floor(projected * scale)))
+    }
+    const westTile = xForLongitude(west)
+    const eastTile = xForLongitude(east - 1e-9)
+    const northTile = yForLatitude(north)
+    const southTile = yForLatitude(south + 1e-9)
+    const tileCount = (eastTile - westTile + 1) * (southTile - northTile + 1)
+    estimated += tileCount * TILE_BYTES_BY_ZOOM[Math.min(zoom, TILE_BYTES_BY_ZOOM.length - 1)]
+  }
+
+  return Math.ceil(estimated * ESTIMATE_SAFETY_FACTOR)
 }
 
 export function regionCenter(bounds) {
