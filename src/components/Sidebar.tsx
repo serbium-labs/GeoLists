@@ -1,4 +1,4 @@
-import { useEffect, type KeyboardEvent, type ReactElement } from 'react'
+import { useEffect, useState, type KeyboardEvent, type ReactElement } from 'react'
 import { MAP_SOURCES } from '../config/mapSources'
 import type { MapList, MapPoint } from '../types/data'
 import type { MapSourceMode, MapViewport, OfflineRegion } from '../types/map'
@@ -7,6 +7,7 @@ import { formatCoordinates } from '../utils/coordinates'
 import { MapUpdates } from './MapUpdates'
 import { mapSourceForKey } from './mapSourceKeyboard'
 import { OfflineRegions } from './OfflineRegions'
+import { pageContainingPoint, pointPage } from './Sidebar/pointPagination'
 
 interface Props {
   requestedMode: MapSourceMode
@@ -46,13 +47,32 @@ function mapSourceStatusText(requestedMode: MapSourceMode, state: MapSourceState
 
 export function Sidebar(props: Props): ReactElement {
   const { requestedMode, mapSourceState, lists, pointCounts, activeListId, points, selectedPointId, loading } = props
+  const [pointPageIndex, setPointPageIndex] = useState(0)
+  const currentPointPage = pointPage(points, pointPageIndex)
+  useEffect(() => {
+    if (currentPointPage.page !== pointPageIndex) {
+      setPointPageIndex(currentPointPage.page)
+    }
+  }, [currentPointPage.page, pointPageIndex])
+
+  useEffect(() => {
+    if (!selectedPointId) {
+      return
+    }
+
+    const selectedPage = pageContainingPoint(points, selectedPointId)
+    if (selectedPage !== null) {
+      setPointPageIndex(selectedPage)
+    }
+  }, [points, selectedPointId])
+
   useEffect(() => {
     if (!selectedPointId) {
       return
     }
 
     document.getElementById(`point-entry-${selectedPointId}`)?.scrollIntoView({ block: 'nearest' })
-  }, [selectedPointId])
+  }, [currentPointPage.page, selectedPointId])
 
   const handleMapSourceKeyDown = (sourceMode: MapSourceMode, event: KeyboardEvent<HTMLButtonElement>): void => {
     const nextMode = mapSourceForKey(sourceMode, event.key)
@@ -85,10 +105,14 @@ export function Sidebar(props: Props): ReactElement {
     {activeListId && <section className="sidebar-section points-section">
       <div className="section-heading"><h2>Points</h2><span>{points.length}</span></div>
       {points.length === 0 ? <p className="point-placeholder">Click the map to add a point</p> : <div className="point-list">
-        {points.map((point) => {
+        {currentPointPage.items.map((point) => {
           const selected = selectedPointId === point.id
           return <button id={`point-entry-${point.id}`} key={point.id} type="button" className={selected ? 'selected' : ''} aria-current={selected ? 'true' : undefined} onClick={() => props.onOpenPoint(point)}><strong>{point.name}</strong><span>{formatCoordinates(point)}</span></button>
         })}
+      </div>}
+      {points.length > 0 && <div className="point-pagination" aria-label="Point list pages">
+        <span>Showing {currentPointPage.startIndex + 1}–{currentPointPage.endIndex} of {points.length}</span>
+        <div><button type="button" disabled={currentPointPage.page === 0} onClick={() => setPointPageIndex((page) => page - 1)}>Previous</button><span>Page {currentPointPage.page + 1} of {currentPointPage.pageCount}</span><button type="button" disabled={currentPointPage.page === currentPointPage.pageCount - 1} onClick={() => setPointPageIndex((page) => page + 1)}>Next</button></div>
       </div>}
     </section>}
 

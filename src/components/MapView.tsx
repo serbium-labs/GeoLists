@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import * as maplibregl from 'maplibre-gl'
-import { Marker, NavigationControl, type Map as MapLibreMap } from 'maplibre-gl'
+import {
+  GeoJSONSource,
+  NavigationControl,
+  type Map as MapLibreMap,
+  type MapGeoJSONFeature,
+  type MapLayerMouseEvent,
+} from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -16,11 +22,36 @@ import {
 import { versionMapLibreWorkerUrl } from '../config/mapWorker'
 import type { MapPoint } from '../types/data'
 import type { Coordinates, MapSourceMode, MapViewport, OfflineRegion } from '../types/map'
-import { pointMarkerPresentation } from './MapView/pointMarker'
+import {
+  createMapPointData,
+  MAP_CLUSTER_COUNT_LAYER_ID,
+  MAP_CLUSTER_LAYER_ID,
+  MAP_POINT_CLUSTER_OPTIONS,
+  MAP_POINT_LABEL_LAYER_ID,
+  MAP_POINT_LAYER_ID,
+  MAP_POINT_SOURCE_ID,
+  MAP_SELECTED_POINT_LAYER_ID,
+} from './MapView/mapPointData'
 
 const DEFAULT_CENTER: [number, number] = [0, 20]
 const DEFAULT_ZOOM = 2
 const STYLE_LOAD_TIMEOUT_MS = 15_000
+const POINT_SELECTION_ZOOM = 15
+const MAX_CLUSTER_EXPANSION_ZOOM = 20
+const CLUSTER_COLOR = '#1c6d4e'
+const SELECTED_POINT_COLOR = '#a2362c'
+const POINT_STROKE_COLOR = '#ffffff'
+const SELECTION_STROKE_COLOR = '#4f8069'
+const POINT_LABEL_COLOR = '#263b31'
+const CLUSTER_RADIUS_SMALL = 18
+const CLUSTER_RADIUS_MEDIUM = 23
+const CLUSTER_RADIUS_LARGE = 28
+const MEDIUM_CLUSTER_SIZE = 100
+const LARGE_CLUSTER_SIZE = 1_000
+const POINT_RADIUS = 8
+const SELECTED_POINT_RADIUS = 12
+const POINT_INTERACTION_LAYER_IDS = [MAP_POINT_LAYER_ID, MAP_SELECTED_POINT_LAYER_ID, MAP_POINT_LABEL_LAYER_ID]
+const CLUSTER_INTERACTION_LAYER_IDS = [MAP_CLUSTER_LAYER_ID, MAP_CLUSTER_COUNT_LAYER_ID]
 maplibregl.setWorkerUrl(versionMapLibreWorkerUrl(maplibreWorkerUrl))
 const EMPTY_STYLE = { version: 8 as const, sources: {}, layers: [{ id: 'unavailable', type: 'background' as const, paint: { 'background-color': '#e5e9e4' } }] }
 
@@ -38,28 +69,113 @@ interface Props {
   onViewportChange: (viewport: MapViewport) => void
 }
 
-interface PointMarkerRecord {
-  element: HTMLButtonElement
-  label: HTMLSpanElement
-  marker: Marker
+function addPointLayers(map: MapLibreMap): void {
+  map.addLayer({
+    id: MAP_CLUSTER_LAYER_ID,
+    type: 'circle',
+    source: MAP_POINT_SOURCE_ID,
+    filter: ['has', 'point_count'],
+    paint: {
+      'circle-color': CLUSTER_COLOR,
+      'circle-radius': ['step', ['get', 'point_count'], CLUSTER_RADIUS_SMALL, MEDIUM_CLUSTER_SIZE, CLUSTER_RADIUS_MEDIUM, LARGE_CLUSTER_SIZE, CLUSTER_RADIUS_LARGE],
+      'circle-stroke-color': POINT_STROKE_COLOR,
+      'circle-stroke-width': 3,
+    },
+  })
+  map.addLayer({
+    id: MAP_CLUSTER_COUNT_LAYER_ID,
+    type: 'symbol',
+    source: MAP_POINT_SOURCE_ID,
+    filter: ['has', 'point_count'],
+    layout: {
+      'text-field': ['get', 'point_count_abbreviated'],
+      'text-font': ['Noto Sans Regular'],
+      'text-size': 12,
+    },
+    paint: { 'text-color': POINT_STROKE_COLOR },
+  })
+  map.addLayer({
+    id: MAP_POINT_LAYER_ID,
+    type: 'circle',
+    source: MAP_POINT_SOURCE_ID,
+    filter: ['!', ['has', 'point_count']],
+    paint: {
+      'circle-color': CLUSTER_COLOR,
+      'circle-radius': POINT_RADIUS,
+      'circle-stroke-color': POINT_STROKE_COLOR,
+      'circle-stroke-width': 3,
+    },
+  })
+  map.addLayer({
+    id: MAP_SELECTED_POINT_LAYER_ID,
+    type: 'circle',
+    source: MAP_POINT_SOURCE_ID,
+    filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'selected'], true]],
+    paint: {
+      'circle-color': SELECTED_POINT_COLOR,
+      'circle-radius': SELECTED_POINT_RADIUS,
+      'circle-stroke-color': SELECTION_STROKE_COLOR,
+      'circle-stroke-width': 5,
+    },
+  })
+  map.addLayer({
+    id: MAP_POINT_LABEL_LAYER_ID,
+    type: 'symbol',
+    source: MAP_POINT_SOURCE_ID,
+    filter: ['!', ['has', 'point_count']],
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-font': ['Noto Sans Regular'],
+      'text-size': ['case', ['==', ['get', 'selected'], true], 13, 11],
+      'text-anchor': 'left',
+      'text-offset': [1.2, 0],
+      'text-allow-overlap': true,
+    },
+    paint: {
+      'text-color': POINT_LABEL_COLOR,
+      'text-halo-color': POINT_STROKE_COLOR,
+      'text-halo-width': 2,
+    },
+  })
 }
 
-function updatePointMarker(record: PointMarkerRecord, point: MapPoint, selected: boolean): void {
-  const presentation = pointMarkerPresentation(point.name, selected)
-  record.element.className = presentation.className
-  record.element.setAttribute('aria-label', presentation.accessibleLabel)
-  record.element.setAttribute('aria-pressed', presentation.pressed)
-  record.label.textContent = point.name
-  record.marker.setLngLat([point.longitude, point.latitude])
+function syncPointLayers(map: MapLibreMap, points: MapPoint[], selectedPointId: string | null): void {
+  if (!map.isStyleLoaded()) {
+    return
+  }
+
+  const data = createMapPointData(points, selectedPointId)
+  const existingSource = map.getSource(MAP_POINT_SOURCE_ID)
+  if (existingSource) {
+    const pointSource = existingSource as GeoJSONSource
+    pointSource.setData(data)
+    return
+  }
+
+  map.addSource(MAP_POINT_SOURCE_ID, {
+    type: 'geojson',
+    data,
+    ...MAP_POINT_CLUSTER_OPTIONS,
+  })
+  addPointLayers(map)
+}
+
+function pointCoordinates(feature: MapGeoJSONFeature): [number, number] | null {
+  if (feature.geometry.type !== 'Point') {
+    return null
+  }
+
+  const [longitude, latitude] = feature.geometry.coordinates
+  return Number.isFinite(longitude) && Number.isFinite(latitude) ? [longitude, latitude] : null
 }
 
 export function MapView({ requestedMode, mapRevision, activeRegion, points, activeListId, focusedPoint, onMapClick, onPointOpen, onRequestOnline, onSourceStateChange, onViewportChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
-  const markersRef = useRef(new Map<string, PointMarkerRecord>())
   const onMapClickRef = useRef(onMapClick)
   const onPointOpenRef = useRef(onPointOpen)
   const pointsRef = useRef(points)
+  const focusedPointIdRef = useRef(focusedPoint?.id ?? null)
   const activeListIdRef = useRef(activeListId)
   const sourceStateRef = useRef(initialMapSourceState(requestedMode, mapRevision))
   const activeStyleRef = useRef<ReturnType<MapLibreMap['getStyle']> | null>(null)
@@ -70,6 +186,7 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
   useEffect(() => { onMapClickRef.current = onMapClick }, [onMapClick])
   useEffect(() => { onPointOpenRef.current = onPointOpen }, [onPointOpen])
   useEffect(() => { pointsRef.current = points }, [points])
+  useEffect(() => { focusedPointIdRef.current = focusedPoint?.id ?? null }, [focusedPoint?.id])
   useEffect(() => { activeListIdRef.current = activeListId }, [activeListId])
   useEffect(() => { onSourceStateChangeRef.current = onSourceStateChange }, [onSourceStateChange])
   useEffect(() => { onViewportChangeRef.current = onViewportChange }, [onViewportChange])
@@ -83,9 +200,47 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
     if (!containerRef.current || mapRef.current) return
     const map = new maplibregl.Map({ container: containerRef.current, style: EMPTY_STYLE, center: activeRegion?.center ?? DEFAULT_CENTER, zoom: activeRegion ? Math.min(activeRegion.maxZoom, 11) : DEFAULT_ZOOM, attributionControl: { compact: true }, locale: { 'NavigationControl.ZoomIn': 'Zoom in', 'NavigationControl.ZoomOut': 'Zoom out', 'NavigationControl.ResetBearing': 'Reset bearing' } })
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right')
-    map.on('click', (event) => {
-      if (activeListIdRef.current) onMapClickRef.current({ longitude: event.lngLat.lng, latitude: event.lngLat.lat })
+    map.on('click', POINT_INTERACTION_LAYER_IDS, (event: MapLayerMouseEvent) => {
+      const pointId = event.features?.[0]?.properties?.id
+      const point = typeof pointId === 'string' ? pointsRef.current.find((candidate) => candidate.id === pointId) : null
+      if (!point) {
+        return
+      }
+
+      event.preventDefault()
+      onPointOpenRef.current(point)
     })
+    map.on('click', CLUSTER_INTERACTION_LAYER_IDS, (event: MapLayerMouseEvent) => {
+      const feature = event.features?.[0]
+      const clusterId = feature?.properties?.cluster_id
+      const center = feature ? pointCoordinates(feature) : null
+      const source = map.getSource(MAP_POINT_SOURCE_ID)
+      if (!center || !Number.isSafeInteger(clusterId) || !(source instanceof GeoJSONSource)) {
+        return
+      }
+
+      event.preventDefault()
+      void source.getClusterExpansionZoom(clusterId).then((zoom) => {
+        map.easeTo({ center, zoom: Math.min(zoom, MAX_CLUSTER_EXPANSION_ZOOM) })
+      }).catch(() => {
+        map.easeTo({ center, zoom: Math.min(map.getZoom() + 2, MAX_CLUSTER_EXPANSION_ZOOM) })
+      })
+    })
+    map.on('click', (event) => {
+      if (event.defaultPrevented || !activeListIdRef.current) {
+        return
+      }
+
+      onMapClickRef.current({ longitude: event.lngLat.lng, latitude: event.lngLat.lat })
+    })
+    const showPointer = (): void => { map.getCanvas().style.cursor = 'pointer' }
+    const restoreCursor = (): void => { map.getCanvas().style.cursor = '' }
+    map.on('mouseenter', POINT_INTERACTION_LAYER_IDS, showPointer)
+    map.on('mouseleave', POINT_INTERACTION_LAYER_IDS, restoreCursor)
+    map.on('mouseenter', CLUSTER_INTERACTION_LAYER_IDS, showPointer)
+    map.on('mouseleave', CLUSTER_INTERACTION_LAYER_IDS, restoreCursor)
+    const syncCurrentPoints = (): void => syncPointLayers(map, pointsRef.current, focusedPointIdRef.current)
+    map.on('style.load', syncCurrentPoints)
     const reportViewport = (): void => {
       const bounds = map.getBounds()
       onViewportChangeRef.current({
@@ -97,8 +252,6 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
     map.on('moveend', reportViewport)
     mapRef.current = map
     return () => {
-      markersRef.current.forEach((record) => record.marker.remove())
-      markersRef.current.clear()
       map.remove()
       mapRef.current = null
     }
@@ -218,53 +371,21 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map) return
-    const visibleIds = new Set(points.map((point) => point.id))
-    markersRef.current.forEach((record, id) => {
-      if (!visibleIds.has(id)) {
-        record.marker.remove()
-        markersRef.current.delete(id)
-      }
-    })
-    points.forEach((point) => {
-      const existing = markersRef.current.get(point.id)
-      const selected = focusedPoint?.id === point.id
-      if (existing) {
-        updatePointMarker(existing, point, selected)
-        return
-      }
+    if (!map) {
+      return
+    }
 
-      const element = document.createElement('button')
-      element.type = 'button'
-      const pin = document.createElement('span')
-      pin.className = 'point-marker-pin'
-      pin.setAttribute('aria-hidden', 'true')
-      const label = document.createElement('span')
-      label.className = 'point-marker-label'
-      element.append(pin, label)
-      element.addEventListener('click', (event) => {
-        event.stopPropagation()
-        const current = pointsRef.current.find((candidate) => candidate.id === point.id)
-        if (current) {
-          onPointOpenRef.current(current)
-        }
-      })
-      const marker = new Marker({ element, anchor: 'bottom' })
-        .setLngLat([point.longitude, point.latitude])
-        .addTo(map)
-      const record = { element, label, marker }
-      updatePointMarker(record, point, selected)
-      markersRef.current.set(point.id, record)
-    })
+    syncPointLayers(map, points, focusedPoint?.id ?? null)
   }, [points, activeListId, focusedPoint?.id])
 
   useEffect(() => {
     if (!focusedPoint || !mapRef.current) return
-    mapRef.current.flyTo({ center: [focusedPoint.longitude, focusedPoint.latitude], zoom: Math.max(mapRef.current.getZoom(), 15) })
+    mapRef.current.flyTo({ center: [focusedPoint.longitude, focusedPoint.latitude], zoom: Math.max(mapRef.current.getZoom(), POINT_SELECTION_ZOOM) })
   }, [focusedPoint])
 
   return <main className="map-area" aria-label="Map">
-    <div ref={containerRef} className="map-container" aria-label="Interactive world map" />
+    <div ref={containerRef} className="map-container" aria-label="Interactive world map" aria-describedby="map-keyboard-instructions" />
+    <p id="map-keyboard-instructions" className="visually-hidden">Use the map zoom controls to expand clusters. Every point can also be selected with the paginated buttons in the sidebar.</p>
     {sourceState.phase === 'loading' && <div className="map-loading" role="status" aria-live="polite">Loading {sourceState.requestedMode === 'online' ? 'online map' : 'local map'}…</div>}
     {sourceState.phase === 'failed' && <div className="map-error" role="alert"><strong>Map unavailable</strong><span>{sourceState.error}</span>{sourceState.activeMode && <span>The {sourceState.activeMode} map remains active.</span>}{sourceState.requestedMode === 'local' && <button type="button" onClick={onRequestOnline}>Switch to online map</button>}</div>}
     {!activeListId && <div className="map-hint" role="status">Create or select a list to add points</div>}
