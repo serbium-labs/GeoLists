@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 const MAP_MUTATION_HEADERS = { 'x-geolists-csrf': '1' }
+export const MAP_UPDATE_POLL_INTERVAL_MS = 1_000
 
 export type MapUpdateStatus = {
   phase: 'idle' | 'downloading' | 'verifying' | 'complete' | 'failed'
@@ -45,14 +46,14 @@ export function MapUpdates({ onInstalled }: Props) {
     return next
   }
 
-  const check = async (silent = false) => {
+  const check = async () => {
     setBusy(true)
-    if (!silent) setMessage('')
+    setMessage('')
     try {
       const response = await fetch('/api/maps/check', { method: 'POST', headers: MAP_MUTATION_HEADERS })
       const value = await response.json() as { version?: string; updateAvailable?: boolean; error?: string }
       if (!response.ok) throw new Error(value.error || 'Failed to check the map')
-      if (!silent) setMessage(value.updateAvailable ? `Version ${value.version} is available` : 'The latest version is installed')
+      setMessage(value.updateAvailable ? `Version ${value.version} is available` : 'The latest version is installed')
       await refresh()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Update check failed')
@@ -61,9 +62,7 @@ export function MapUpdates({ onInstalled }: Props) {
 
   useEffect(() => {
     let cancelled = false
-    void refresh().then((next) => {
-      if (!cancelled && next.updatesConfigured) void check(true)
-    }).catch((error: unknown) => {
+    void refresh().catch((error: unknown) => {
       if (!cancelled) setMessage(error instanceof Error ? error.message : 'Local server is unavailable')
     })
     return () => { cancelled = true }
@@ -73,7 +72,7 @@ export function MapUpdates({ onInstalled }: Props) {
     if (!status || !['downloading', 'verifying'].includes(status.phase)) return
     const timer = window.setInterval(() => void refresh().catch((error: unknown) => {
       setMessage(error instanceof Error ? error.message : 'Failed to get progress')
-    }), 500)
+    }), MAP_UPDATE_POLL_INTERVAL_MS)
     return () => window.clearInterval(timer)
   }, [status?.phase])
 

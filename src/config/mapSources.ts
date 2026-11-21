@@ -4,6 +4,7 @@ import { createLocalStyle } from './localStyle'
 
 export const LOCAL_ARCHIVE_URL = '/maps/spb.pmtiles'
 export const ONLINE_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty'
+const availableArchiveVersions = new Set<string>()
 
 export type LocalArchiveStatus =
   | { available: true }
@@ -29,9 +30,13 @@ export function getMapStyle(mode: MapSourceMode, revision?: string, localArchive
 export async function inspectLocalArchive(signal: AbortSignal, revision?: string, localArchiveUrl = LOCAL_ARCHIVE_URL): Promise<LocalArchiveStatus> {
   try {
     const url = revision ? `${localArchiveUrl}?v=${encodeURIComponent(revision)}` : localArchiveUrl
+    if (revision && availableArchiveVersions.has(url)) {
+      return { available: true }
+    }
+
     const response = await fetch(url, {
       headers: { Range: 'bytes=0-6' },
-      cache: 'no-store',
+      cache: revision ? 'force-cache' : 'no-store',
       signal,
     })
 
@@ -48,7 +53,15 @@ export async function inspectLocalArchive(signal: AbortSignal, revision?: string
     await reader.cancel()
     if (!value || value.byteLength < 7) return { available: false, reason: 'invalid' }
     const signature = new TextDecoder().decode(value.slice(0, 7))
-    return signature === 'PMTiles' ? { available: true } : { available: false, reason: 'invalid' }
+    if (signature !== 'PMTiles') {
+      return { available: false, reason: 'invalid' }
+    }
+
+    if (revision) {
+      availableArchiveVersions.add(url)
+    }
+
+    return { available: true }
   } catch (error: unknown) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error
     return { available: false, reason: 'network' }

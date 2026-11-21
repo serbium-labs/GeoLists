@@ -6,6 +6,11 @@ import { contentTypeFor, parseByteRange, resolveStaticFile } from './http-utils.
 import { installMapArchive } from './map-installer.mjs'
 import { authorizeMapApiMutation, isMapApiMutation } from './map-api-security.mjs'
 import {
+  archiveResponsePolicy,
+  IMMUTABLE_ARCHIVE_CACHE_CONTROL,
+  NO_STORE_CACHE_CONTROL,
+} from './map-cache-policy.mjs'
+import {
   activateRegion,
   estimateRegionSize,
   findInstalledRegion,
@@ -213,9 +218,9 @@ async function installUpdate() {
   }
 }
 
-async function serveFile(req, res, path, cache = true) {
+async function serveFile(req, res, path, cacheControl = IMMUTABLE_ARCHIVE_CACHE_CONTROL) {
   const info = await stat(path); const range = req.headers.range
-  const headers = { 'content-type': contentTypeFor(path), 'accept-ranges': 'bytes', 'cache-control': cache ? 'public, max-age=31536000, immutable' : 'no-store' }
+  const headers = { 'content-type': contentTypeFor(path), 'accept-ranges': 'bytes', 'cache-control': cacheControl }
   const parsedRange = parseByteRange(range, info.size)
   if (parsedRange) {
     if (!parsedRange.satisfiable) { res.writeHead(416, { 'content-range': parsedRange.contentRange }); return res.end() }
@@ -283,7 +288,12 @@ createServer(async (req, res) => {
     }
     if (url.pathname === '/maps/spb.pmtiles') {
       const active = await activeInfo(); if (!active) return sendJson(res, 404, { error: 'Архив карты не установлен' })
-      return serveFile(req, res, active.path, false)
+      const cachePolicy = archiveResponsePolicy(url.searchParams.get('v'), active.version)
+      if (!cachePolicy.servable) {
+        return sendJson(res, 404, { error: 'The requested archive version is no longer active' })
+      }
+
+      return serveFile(req, res, active.path, cachePolicy.cacheControl)
     }
     const regionMatch = url.pathname.match(/^\/maps\/regions\/(region-[a-f\d-]{36})\.pmtiles$/)
     if (regionMatch) {
@@ -291,10 +301,16 @@ createServer(async (req, res) => {
       if (!region) {
         return sendJson(res, 404, { error: 'Region archive not found' })
       }
-      return serveFile(req, res, join(mapsDir, region.file), false)
+      const cachePolicy = archiveResponsePolicy(url.searchParams.get('v'), region.revision)
+      if (!cachePolicy.servable) {
+        return sendJson(res, 404, { error: 'The requested region version is not available' })
+      }
+
+      return serveFile(req, res, join(mapsDir, region.file), cachePolicy.cacheControl)
     }
     const file = await resolveStaticFile(url.pathname, distDir)
     if (!file) return sendJson(res, 403, { error: 'Forbidden' })
-    return serveFile(req, res, file, extname(file) !== '.html')
+    const cacheControl = extname(file) === '.html' ? NO_STORE_CACHE_CONTROL : IMMUTABLE_ARCHIVE_CACHE_CONTROL
+    return serveFile(req, res, file, cacheControl)
   } catch (error) { return sendJson(res, 500, { error: error instanceof Error ? error.message : 'Server error' }) }
 }).listen(port, host, () => console.log(`GeoLists: http://${host}:${port}`))
