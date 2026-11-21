@@ -6,7 +6,7 @@ import { ImportPreviewDialog } from './components/ImportPreviewDialog'
 import { repository } from './storage/database'
 import { ValidationError } from './storage/validation'
 import type { MapList, MapPoint, PointFields } from './types/data'
-import type { Coordinates, MapSourceMode } from './types/map'
+import type { Coordinates, MapSourceMode, MapViewport, OfflineRegion } from './types/map'
 import { initialMapSourceState, type MapSourceState } from './config/mapSourceSwitch'
 import { createMapData, MAX_MAPDATA_BYTES, parseMapData, safeMapDataFilename, type MapDataContent } from './exchange/mapdata'
 
@@ -19,12 +19,23 @@ export default function App() {
   const [requestedMode, setRequestedMode] = useState<MapSourceMode>(() => localStorage.getItem('geolists.mapMode') === 'local' ? 'local' : 'online')
   const [mapSourceState, setMapSourceState] = useState<MapSourceState>(() => initialMapSourceState(requestedMode, ''))
   const [mapRevision, setMapRevision] = useState('')
+  const [activeRegion, setActiveRegion] = useState<OfflineRegion | null>(null)
+  const [mapViewport, setMapViewport] = useState<MapViewport | null>(null)
   const requestMapMode = (next: MapSourceMode): void => setRequestedMode(next)
   const handleMapSourceState = useCallback((next: MapSourceState) => {
     setMapSourceState(next)
     if (next.phase === 'active' && next.activeMode) {
       localStorage.setItem('geolists.mapMode', next.activeMode)
     }
+  }, [])
+  const handleActiveRegion = useCallback((region: OfflineRegion | null): void => {
+    setActiveRegion(region)
+    setMapRevision(region?.revision ?? '')
+  }, [])
+  const handleRegionActivated = useCallback((region: OfflineRegion): void => {
+    setActiveRegion(region)
+    setMapRevision(region.revision)
+    requestMapMode('local')
   }, [])
   const [lists, setLists] = useState<MapList[]>([])
   const [points, setPoints] = useState<MapPoint[]>([])
@@ -157,8 +168,8 @@ export default function App() {
 
   const panelCoordinates = editingPoint ?? draftCoordinates
   return <div className="app-shell">
-    <Sidebar requestedMode={requestedMode} mapSourceState={mapSourceState} lists={lists} pointCounts={pointCounts} activeListId={activeListId} points={points} loading={loading} onModeChange={requestMapMode} onCreateList={() => void createList()} onSelectList={setActiveListId} onRenameList={(list) => void renameList(list)} onDeleteList={(list) => void deleteList(list)} onOpenPoint={openPoint} onExport={() => void exportList()} onImport={(file) => void prepareImport(file)} onMapInstalled={(version) => { setMapRevision(version); requestMapMode('local') }} />
-    <MapView requestedMode={requestedMode} mapRevision={mapRevision} points={points} activeListId={activeListId} focusedPoint={focusedPoint} onMapClick={(coordinates) => { setError(null); setEditingPoint(null); setDraftCoordinates(coordinates) }} onPointOpen={openPoint} onRequestOnline={() => requestMapMode('online')} onSourceStateChange={handleMapSourceState} />
+    <Sidebar requestedMode={requestedMode} mapSourceState={mapSourceState} lists={lists} pointCounts={pointCounts} activeListId={activeListId} points={points} loading={loading} viewport={mapViewport} onModeChange={requestMapMode} onCreateList={() => void createList()} onSelectList={setActiveListId} onRenameList={(list) => void renameList(list)} onDeleteList={(list) => void deleteList(list)} onOpenPoint={openPoint} onExport={() => void exportList()} onImport={(file) => void prepareImport(file)} onMapInstalled={(version) => { setActiveRegion(null); setMapRevision(version); requestMapMode('local') }} onActiveRegion={handleActiveRegion} onRegionActivated={handleRegionActivated} />
+    <MapView requestedMode={requestedMode} mapRevision={mapRevision} activeRegion={activeRegion} points={points} activeListId={activeListId} focusedPoint={focusedPoint} onMapClick={(coordinates) => { setError(null); setEditingPoint(null); setDraftCoordinates(coordinates) }} onPointOpen={openPoint} onRequestOnline={() => requestMapMode('online')} onSourceStateChange={handleMapSourceState} onViewportChange={setMapViewport} />
     {error && !panelCoordinates && <div className="app-error" role="alert">{error}<button type="button" aria-label="Dismiss error" onClick={() => setError(null)}>×</button></div>}
     {panelCoordinates && <PointPanel point={editingPoint} coordinates={panelCoordinates} error={error} saving={saving} onClose={() => { setDraftCoordinates(null); setEditingPoint(null); setError(null) }} onSave={(fields) => void savePoint(fields)} onDelete={editingPoint ? () => void deletePoint() : null} />}
     {importPreview && <ImportPreviewDialog preview={importPreview} error={error} saving={saving} onCancel={() => setImportPreview(null)} onConfirm={() => void confirmImport()} />}

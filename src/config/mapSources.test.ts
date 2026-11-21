@@ -25,6 +25,16 @@ describe('inspectLocalArchive', () => {
     expect(fetchMock).toHaveBeenCalledWith('/maps/spb.pmtiles?v=2026-11-13', expect.any(Object))
   })
 
+  it('checks the selected region archive instead of the legacy URL', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('PMTiles', {
+      status: 206,
+      headers: { 'content-range': 'bytes 0-6/100' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    await inspectLocalArchive(controller().signal, 'region-revision', '/maps/regions/region-123.pmtiles')
+    expect(fetchMock).toHaveBeenCalledWith('/maps/regions/region-123.pmtiles?v=region-revision', expect.any(Object))
+  })
+
   it('distinguishes a missing archive from an invalid one', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response('', { status: 404 }))

@@ -15,9 +15,10 @@ import {
 } from '../config/mapSourceSwitch'
 import { versionMapLibreWorkerUrl } from '../config/mapWorker'
 import type { MapPoint } from '../types/data'
-import type { Coordinates, MapSourceMode } from '../types/map'
+import type { Coordinates, MapSourceMode, MapViewport, OfflineRegion } from '../types/map'
 
-const SPB_CENTER: [number, number] = [30.3351, 59.9343]
+const DEFAULT_CENTER: [number, number] = [0, 20]
+const DEFAULT_ZOOM = 2
 const STYLE_LOAD_TIMEOUT_MS = 15_000
 maplibregl.setWorkerUrl(versionMapLibreWorkerUrl(maplibreWorkerUrl))
 const EMPTY_STYLE = { version: 8 as const, sources: {}, layers: [{ id: 'unavailable', type: 'background' as const, paint: { 'background-color': '#e5e9e4' } }] }
@@ -25,6 +26,7 @@ const EMPTY_STYLE = { version: 8 as const, sources: {}, layers: [{ id: 'unavaila
 interface Props {
   requestedMode: MapSourceMode
   mapRevision: string
+  activeRegion: OfflineRegion | null
   points: MapPoint[]
   activeListId: string | null
   focusedPoint: MapPoint | null
@@ -32,9 +34,10 @@ interface Props {
   onPointOpen: (point: MapPoint) => void
   onRequestOnline: () => void
   onSourceStateChange: (state: MapSourceState) => void
+  onViewportChange: (viewport: MapViewport) => void
 }
 
-export function MapView({ requestedMode, mapRevision, points, activeListId, focusedPoint, onMapClick, onPointOpen, onRequestOnline, onSourceStateChange }: Props) {
+export function MapView({ requestedMode, mapRevision, activeRegion, points, activeListId, focusedPoint, onMapClick, onPointOpen, onRequestOnline, onSourceStateChange, onViewportChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const markersRef = useRef(new Map<string, Marker>())
@@ -45,6 +48,7 @@ export function MapView({ requestedMode, mapRevision, points, activeListId, focu
   const sourceStateRef = useRef(initialMapSourceState(requestedMode, mapRevision))
   const activeStyleRef = useRef<ReturnType<MapLibreMap['getStyle']> | null>(null)
   const onSourceStateChangeRef = useRef(onSourceStateChange)
+  const onViewportChangeRef = useRef(onViewportChange)
   const [sourceState, setSourceState] = useState(sourceStateRef.current)
 
   useEffect(() => { onMapClickRef.current = onMapClick }, [onMapClick])
@@ -52,6 +56,7 @@ export function MapView({ requestedMode, mapRevision, points, activeListId, focu
   useEffect(() => { pointsRef.current = points }, [points])
   useEffect(() => { activeListIdRef.current = activeListId }, [activeListId])
   useEffect(() => { onSourceStateChangeRef.current = onSourceStateChange }, [onSourceStateChange])
+  useEffect(() => { onViewportChangeRef.current = onViewportChange }, [onViewportChange])
   useEffect(() => {
     const protocol = new Protocol()
     maplibregl.addProtocol('pmtiles', protocol.tile)
@@ -60,11 +65,20 @@ export function MapView({ requestedMode, mapRevision, points, activeListId, focu
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
-    const map = new maplibregl.Map({ container: containerRef.current, style: EMPTY_STYLE, center: SPB_CENTER, zoom: 11, attributionControl: { compact: true }, locale: { 'NavigationControl.ZoomIn': 'Zoom in', 'NavigationControl.ZoomOut': 'Zoom out', 'NavigationControl.ResetBearing': 'Reset bearing' } })
+    const map = new maplibregl.Map({ container: containerRef.current, style: EMPTY_STYLE, center: activeRegion?.center ?? DEFAULT_CENTER, zoom: activeRegion ? Math.min(activeRegion.maxZoom, 11) : DEFAULT_ZOOM, attributionControl: { compact: true }, locale: { 'NavigationControl.ZoomIn': 'Zoom in', 'NavigationControl.ZoomOut': 'Zoom out', 'NavigationControl.ResetBearing': 'Reset bearing' } })
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right')
     map.on('click', (event) => {
       if (activeListIdRef.current) onMapClickRef.current({ longitude: event.lngLat.lng, latitude: event.lngLat.lat })
     })
+    const reportViewport = (): void => {
+      const bounds = map.getBounds()
+      onViewportChangeRef.current({
+        bounds: [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()],
+        zoom: map.getZoom(),
+      })
+    }
+    map.on('load', reportViewport)
+    map.on('moveend', reportViewport)
     mapRef.current = map
     return () => {
       markersRef.current.forEach((marker) => marker.remove())
@@ -146,7 +160,7 @@ export function MapView({ requestedMode, mapRevision, points, activeListId, focu
 
     const applySource = async (): Promise<void> => {
       if (requestedMode === 'local') {
-        const archive = await inspectLocalArchive(controller.signal, mapRevision)
+        const archive = await inspectLocalArchive(controller.signal, mapRevision, activeRegion?.url)
         if (!archive.available) {
           fail(localArchiveErrorMessage(archive))
           return
@@ -161,7 +175,7 @@ export function MapView({ requestedMode, mapRevision, points, activeListId, focu
             : 'The local map could not be displayed. Check the PMTiles archive and local server.'
           fail(message)
         }, STYLE_LOAD_TIMEOUT_MS)
-        currentMap.setStyle(getMapStyle(requestedMode, mapRevision))
+        currentMap.setStyle(getMapStyle(requestedMode, mapRevision, activeRegion?.url))
       }
     }
     void applySource().catch((reason: unknown) => {
@@ -175,7 +189,16 @@ export function MapView({ requestedMode, mapRevision, points, activeListId, focu
       controller.abort()
       stopWaitingForStyle()
     }
-  }, [requestedMode, mapRevision])
+  }, [requestedMode, mapRevision, activeRegion?.url])
+
+  useEffect(() => {
+    if (!activeRegion || !mapRef.current) {
+      return
+    }
+
+    const [west, south, east, north] = activeRegion.bounds
+    mapRef.current.fitBounds([[west, south], [east, north]], { padding: 40, maxZoom: Math.min(activeRegion.maxZoom, 12) })
+  }, [activeRegion?.id])
 
   useEffect(() => {
     const map = mapRef.current
@@ -207,7 +230,7 @@ export function MapView({ requestedMode, mapRevision, points, activeListId, focu
   }, [focusedPoint])
 
   return <main className="map-area" aria-label="Map">
-    <div ref={containerRef} className="map-container" aria-label="Interactive map of Saint Petersburg" />
+    <div ref={containerRef} className="map-container" aria-label="Interactive world map" />
     {sourceState.phase === 'loading' && <div className="map-loading" role="status" aria-live="polite">Loading {sourceState.requestedMode === 'online' ? 'online map' : 'local map'}…</div>}
     {sourceState.phase === 'failed' && <div className="map-error" role="alert"><strong>Map unavailable</strong><span>{sourceState.error}</span>{sourceState.activeMode && <span>The {sourceState.activeMode} map remains active.</span>}{sourceState.requestedMode === 'local' && <button type="button" onClick={onRequestOnline}>Switch to online map</button>}</div>}
     {!activeListId && <div className="map-hint" role="status">Create or select a list to add points</div>}

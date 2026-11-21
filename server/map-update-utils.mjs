@@ -25,7 +25,7 @@ export function validManifest(value) {
 }
 
 export function activeArchivePath(mapsDir, file) {
-  if (typeof file !== 'string' || basename(file) !== file || !/^spb-[\w.-]+\.pmtiles$/.test(file)) return null
+  if (typeof file !== 'string' || basename(file) !== file || !/^(?:spb-[\w.-]+|region-[a-f\d-]{36})\.pmtiles$/.test(file)) return null
   return join(mapsDir, file)
 }
 

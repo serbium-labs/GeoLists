@@ -63,6 +63,19 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .source-switch button.pending { color: var(--map-source-pending-color); }
 .source-status { margin: var(--map-source-status-spacing) 0 0; color: var(--map-source-status-color); font-size: var(--map-source-status-font-size); line-height: var(--map-source-status-line-height); }
 .source-status.failed { color: var(--map-source-error-color); }
+.offline-regions { display: flex; flex-direction: column; gap: 7px; margin-top: 16px; padding-top: 14px; border-top: 1px solid #dce2db; }
+.offline-regions h3, .offline-regions h4 { margin: 0; color: #43534b; font-size: 11px; }
+.offline-regions label { display: flex; flex-direction: column; gap: 4px; font-size: 10px; }
+.offline-regions input { min-width: 0; padding: 6px; border: 1px solid #d1dad3; border-radius: 6px; }
+.offline-regions > button, .region-actions button, .region-operation button { padding: 7px; border: 1px solid #d1dad3; border-radius: 6px; color: #43534b; background: white; cursor: pointer; font-size: 11px; }
+.offline-regions button:disabled { cursor: default; opacity: .5; }
+.region-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.region-bounds, .region-estimate, .region-operation, .installed-regions p { margin: 0; color: #68766e; font-size: 10px; line-height: 1.4; }
+.region-operation { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.installed-regions { display: flex; flex-direction: column; gap: 5px; margin-top: 5px; }
+.installed-regions button { display: flex; align-items: flex-start; flex-direction: column; gap: 2px; padding: 7px; border: 1px solid #d1dad3; border-radius: 6px; color: #43534b; background: white; text-align: left; }
+.installed-regions button.active { border-color: #6fa88e; background: #eaf3ed; }
+.installed-regions small { color: #718078; font-size: 9px; }
 .map-updates { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; color: #68766e; font-size: 11px; }
 .map-updates p { margin: 0; }
 .map-updates progress { width: 100%; accent-color: #1c6d4e; }

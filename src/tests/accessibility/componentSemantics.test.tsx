@@ -40,7 +40,7 @@ describe('component accessibility semantics', () => {
       phase: 'active' as const,
       error: null,
     }
-    const markup = renderToStaticMarkup(<Sidebar requestedMode="online" mapSourceState={mapSourceState} lists={[]} pointCounts={{}} activeListId={null} points={[]} loading onModeChange={vi.fn()} onCreateList={vi.fn()} onSelectList={vi.fn()} onRenameList={vi.fn()} onDeleteList={vi.fn()} onOpenPoint={vi.fn()} onExport={vi.fn()} onImport={vi.fn()} onMapInstalled={vi.fn()} />)
+    const markup = renderToStaticMarkup(<Sidebar requestedMode="online" mapSourceState={mapSourceState} lists={[]} pointCounts={{}} activeListId={null} points={[]} loading viewport={null} onModeChange={vi.fn()} onCreateList={vi.fn()} onSelectList={vi.fn()} onRenameList={vi.fn()} onDeleteList={vi.fn()} onOpenPoint={vi.fn()} onExport={vi.fn()} onImport={vi.fn()} onMapInstalled={vi.fn()} onActiveRegion={vi.fn()} onRegionActivated={vi.fn()} />)
 
     expect(markup).toContain('aria-label="Loading lists"')
     expect(markup).toContain('role="radiogroup"')

@@ -2,7 +2,14 @@ import { timingSafeEqual } from 'node:crypto'
 
 export const MAP_API_CSRF_HEADER = 'x-geolists-csrf'
 export const MAP_API_CSRF_VALUE = '1'
-const MAP_API_MUTATION_PATHS = new Set(['/api/maps/check', '/api/maps/update'])
+const MAP_API_MUTATION_PATHS = new Set([
+  '/api/maps/check',
+  '/api/maps/update',
+  '/api/regions/estimate',
+  '/api/regions/download',
+  '/api/regions/activate',
+  '/api/regions/cancel',
+])
 
 export function isMapApiMutation(method, pathname) {
   return method === 'POST' && MAP_API_MUTATION_PATHS.has(pathname)

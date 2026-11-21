@@ -10,6 +10,9 @@ COPY src ./src
 COPY public ./public
 RUN npm run build
 
+FROM golang:1.25-alpine AS pmtiles-build
+RUN go install github.com/protomaps/go-pmtiles/cmd/pmtiles@v1.31.2
+
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production \
     HTTP_HOST=0.0.0.0 \
@@ -18,7 +21,8 @@ ENV NODE_ENV=production \
 WORKDIR /app
 
 COPY --from=build --chown=node:node /app/dist ./dist
-COPY --chown=node:node server/map-server.mjs server/http-utils.mjs server/map-installer.mjs server/map-update-utils.mjs server/server-config.mjs ./server/
+COPY --from=pmtiles-build /go/bin/pmtiles /usr/local/bin/pmtiles
+COPY --chown=node:node server/map-server.mjs server/http-utils.mjs server/map-installer.mjs server/map-update-utils.mjs server/server-config.mjs server/map-api-security.mjs server/map-storage.mjs server/map-regions.mjs ./server/
 COPY --chown=node:node config ./config
 RUN mkdir -p /app/data/maps && chown -R node:node /app/data
 

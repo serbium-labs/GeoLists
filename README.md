@@ -1,6 +1,6 @@
 # GeoLists
 
-A web application for managing lists of geographic points in Saint Petersburg. List data is stored in IndexedDB; the map can switch between OpenFreeMap and a fully local Protomaps PMTiles archive.
+A web application for managing lists of geographic points anywhere in the world. List data is stored in IndexedDB; the map can switch between OpenFreeMap and fully local Protomaps PMTiles archives.
 
 ## Development
 
@@ -131,6 +131,14 @@ The TASK 005 configuration references the published `spb-latest.json` from Relea
 The selected mode is saved in `localStorage`. When starting in local mode, the application does not request the online style. PMTiles, glyph PBF files, JS, and CSS are served by the local server; PMTiles is read using Range requests. Online mode uses the public [OpenFreeMap Liberty](https://openfreemap.org/) style and requires internet access for the style, tiles, fonts, and sprites.
 
 A local server is required for offline use after installation: opening `index.html` via `file://` does not support the required Range requests and update API correctly.
+
+### Custom offline regions
+
+Open the online map, move and zoom it to the required rectangular area, and select **Use current map view** under **Offline regions**. GeoLists estimates the archive size before allowing the download. The server then extracts the selected area, verifies the resulting PMTiles v3 archive, checks the configured storage limits again, and activates the region atomically. Installed regions remain available in the same panel and can be activated without downloading them again.
+
+The Docker image includes PMTiles CLI 1.31.2. When the server is run outside Docker, install a compatible `pmtiles` executable in `PATH` or set `PMTILES_BIN` to its location. `MAP_REGION_SOURCE_URL` can override the default daily Protomaps archive and must be an HTTPS URL. Size estimates are intentionally conservative; the final archive must still satisfy `MAP_MAX_ARCHIVE_BYTES`, `MAP_MAX_STORED_BYTES`, `MAP_MIN_FREE_BYTES`, `MAP_MAX_REGION_AREA_KM2`, and `MAP_MAX_ZOOM`.
+
+Region downloads can be cancelled while extraction is running. Existing manifest-based archives and `/maps/spb.pmtiles` remain supported.
 
 ## User input and `.mapdata` validation
 
