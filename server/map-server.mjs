@@ -22,6 +22,7 @@ import {
 } from './map-regions.mjs'
 import { applyRetentionPolicy, ensureDownloadCapacity, regionAreaKm2, storageLimits, validateDownloadLimits } from './map-storage.mjs'
 import { activeArchivePath, publicAvailable, validManifest, withSpatialMetadata } from './map-update-utils.mjs'
+import { createReverseGeocoder, GEOCODING_SOURCE, reverseGeocodingEndpoint, ReverseGeocodingError } from './reverse-geocoding.mjs'
 import { httpHost } from './server-config.mjs'
 
 const root = resolve(import.meta.dirname, '..')
@@ -37,6 +38,8 @@ const updateManifestUrl = process.env.MAP_UPDATE_MANIFEST_URL || updateConfig.ma
 const mapStorageLimits = storageLimits(process.env)
 const currentBuildDate = new Date().toISOString().slice(0, 10).replaceAll('-', '')
 const regionSourceUrl = process.env.MAP_REGION_SOURCE_URL || `https://build.protomaps.com/${currentBuildDate}.pmtiles`
+const geocodingEndpoint = reverseGeocodingEndpoint(process.env)
+const reverseGeocodeAddress = geocodingEndpoint ? createReverseGeocoder({ endpoint: geocodingEndpoint }) : null
 if (!regionSourceUrl.startsWith('https://')) {
   throw new Error('MAP_REGION_SOURCE_URL must use HTTPS')
 }
@@ -252,6 +255,24 @@ createServer(async (req, res) => {
     }
     if (url.pathname === '/api/regions' && req.method === 'GET') {
       return sendJson(res, 200, await regionsStatus())
+    }
+    if (url.pathname === '/api/geocoding/status' && req.method === 'GET') {
+      return sendJson(res, 200, { configured: Boolean(reverseGeocodeAddress), source: reverseGeocodeAddress ? GEOCODING_SOURCE : null })
+    }
+    if (url.pathname === '/api/geocoding/reverse' && req.method === 'POST') {
+      if (!reverseGeocodeAddress) {
+        return sendJson(res, 503, { error: 'Address lookup is not configured' })
+      }
+
+      const value = await readJsonBody(req)
+      try {
+        return sendJson(res, 200, await reverseGeocodeAddress({ latitude: value.latitude, longitude: value.longitude }))
+      } catch (error) {
+        if (error instanceof ReverseGeocodingError) {
+          return sendJson(res, error.status, { error: error.message })
+        }
+        throw error
+      }
     }
     if (url.pathname === '/api/regions/estimate' && req.method === 'POST') {
       const selection = validateRegionSelection(await readJsonBody(req), mapStorageLimits)

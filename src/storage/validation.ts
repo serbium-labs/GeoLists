@@ -107,15 +107,26 @@ export function validateListName(name: unknown): string {
   return normalizeText(name, TEXT_FIELD_RULES.listName)
 }
 
+export function validateAddress(address: unknown): string {
+  return normalizeText(address, TEXT_FIELD_RULES.address)
+}
+
+export function validateCoordinates(latitude: unknown, longitude: unknown): Pick<PointFields, 'latitude' | 'longitude'> {
+  return {
+    latitude: validateCoordinate(latitude, COORDINATE_RULES.latitude),
+    longitude: validateCoordinate(longitude, COORDINATE_RULES.longitude),
+  }
+}
+
 export function validatePointFields(fields: PointFields): PointFields {
+  const coordinates = validateCoordinates(fields.latitude, fields.longitude)
   return {
     name: normalizeText(fields.name, TEXT_FIELD_RULES.name),
     organization: normalizeText(fields.organization, TEXT_FIELD_RULES.organization),
-    address: normalizeText(fields.address, TEXT_FIELD_RULES.address),
+    address: validateAddress(fields.address),
     workingHours: normalizeText(fields.workingHours, TEXT_FIELD_RULES.workingHours),
     website: normalizeWebsite(fields.website),
     comment: normalizeText(fields.comment, TEXT_FIELD_RULES.comment),
-    latitude: validateCoordinate(fields.latitude, COORDINATE_RULES.latitude),
-    longitude: validateCoordinate(fields.longitude, COORDINATE_RULES.longitude),
+    ...coordinates,
   }
 }

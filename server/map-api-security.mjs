@@ -9,6 +9,7 @@ const MAP_API_MUTATION_PATHS = new Set([
   '/api/regions/download',
   '/api/regions/activate',
   '/api/regions/cancel',
+  '/api/geocoding/reverse',
 ])
 
 export function isMapApiMutation(method, pathname) {

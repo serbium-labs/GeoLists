@@ -160,6 +160,18 @@ Imports are limited to 10 MB and 10,000 points. List and point identifiers and t
 
 The SHA-256 checksum in a `.mapdata` document detects accidental corruption or modification of its contents. It does not authenticate the author or establish that a document comes from a trusted source.
 
+## Optional reverse geocoding
+
+Address lookup is disabled by default. Configure a Nominatim-compatible HTTPS reverse endpoint on the server to enable the **Find address from coordinates** action:
+
+```bash
+REVERSE_GEOCODING_URL=https://your-nominatim.example/reverse npm run serve
+```
+
+GeoLists never sends point coordinates to a geocoding service automatically. A request is made only after the user selects the lookup action in the point form. The returned address is shown as a suggestion with OpenStreetMap attribution and does not replace manual input until the user selects **Use this address**. Manual entry and saving continue to work when the service is not configured, offline, unavailable, or returns no result.
+
+The server hides the configured endpoint from the browser, identifies GeoLists through its User-Agent, limits upstream traffic to one request per second, and keeps a bounded in-memory cache for repeated coordinates. Operators using the public OpenStreetMap Nominatim instance must review and continue to comply with its [usage policy](https://operations.osmfoundation.org/policies/nominatim/), including its capacity, attribution, caching, and privacy requirements. Do not send personal data or confidential locations to a third-party geocoding service. A self-hosted Nominatim-compatible endpoint is recommended for larger or privacy-sensitive deployments.
+
 ## Storage, data sources, and licenses
 
 - The large PMTiles archive is stored in the file system rather than IndexedDB/Cache API: browser storage quotas vary and cached data may be automatically evicted.
@@ -167,8 +179,8 @@ The SHA-256 checksum in a `.mapdata` document detects accidental corruption or m
 - Noto Sans glyphs are distributed under the SIL Open Font License; the script downloads the license alongside the files.
 - A zoom-15 archive should not be expected to contain details available only at zoom 16+. Its size depends on the build date and bounding box.
 - The server listens only on `127.0.0.1`. Shared access requires TLS, authentication, and a reverse proxy.
-- Map update POST endpoints require the `X-GeoLists-CSRF: 1` header. Direct loopback access is allowed without a bearer token. The Docker Compose configuration explicitly enables local-only access because its published port is bound to `127.0.0.1`.
-- An externally accessible deployment must set `MAP_UPDATE_API_TOKEN`, remove `MAP_UPDATE_API_LOCAL_ONLY`, and configure the TLS reverse proxy to inject `Authorization: Bearer <token>` for `/api/maps/check` and `/api/maps/update`. The token must remain server-side and must never be exposed to browser code.
+- Map update and reverse-geocoding POST endpoints require the `X-GeoLists-CSRF: 1` header. Direct loopback access is allowed without a bearer token. The Docker Compose configuration explicitly enables local-only access because its published port is bound to `127.0.0.1`.
+- An externally accessible deployment must set `MAP_UPDATE_API_TOKEN`, remove `MAP_UPDATE_API_LOCAL_ONLY`, and configure the TLS reverse proxy to inject `Authorization: Bearer <token>` for protected mutations under `/api/maps`, `/api/regions`, and `/api/geocoding`. The token must remain server-side and must never be exposed to browser code.
 - Offline map storage defaults to a 1 GiB archive limit, 2 GiB total retained storage, 512 MiB of free space after reserving the download, a 10,000 km² region, zoom 15, and one inactive recovery archive. Deployments may override these values with `MAP_MAX_ARCHIVE_BYTES`, `MAP_MAX_STORED_BYTES`, `MAP_MIN_FREE_BYTES`, `MAP_MAX_REGION_AREA_KM2`, `MAP_MAX_ZOOM`, and `MAP_RETAINED_INACTIVE_ARCHIVES`; at least one inactive recovery archive is always retained.
 
 ## Checks

@@ -4,8 +4,21 @@ import { formatCoordinate } from '../utils/coordinates'
 import { buildTwoGisUrl } from '../exchange/mapdata'
 import { parseCoordinateInput, TEXT_FIELD_RULES, validatePointFields, ValidationError } from '../storage/validation'
 import { useDialogFocus } from '../hooks/useDialogFocus'
+import {
+  applyResolvedAddress,
+  getReverseGeocodingStatus,
+  resolveAddress,
+  type GeocodingSource,
+} from '../services/reverseGeocoding'
 
 const EMPTY_TEXT = { name: '', organization: '', address: '', workingHours: '', website: '', comment: '' }
+
+type GeocodingAvailability = 'checking' | 'configured' | 'unconfigured' | 'unavailable'
+type AddressLookupState =
+  | { phase: 'idle' | 'loading' | 'cancelled' }
+  | { phase: 'success'; address: string; source: GeocodingSource }
+  | { phase: 'empty'; source: GeocodingSource }
+  | { phase: 'failed'; message: string }
 
 interface Props {
   point: MapPoint | null
@@ -23,13 +36,62 @@ export function PointPanel({ point, coordinates, error, saving, onClose, onSave,
   const [latitude, setLatitude] = useState(String(coordinates.latitude))
   const [longitude, setLongitude] = useState(String(coordinates.longitude))
   const [validationError, setValidationError] = useState<string | null>(null)
+  const [geocodingAvailability, setGeocodingAvailability] = useState<GeocodingAvailability>('checking')
+  const [addressLookup, setAddressLookup] = useState<AddressLookupState>({ phase: 'idle' })
+  const addressLookupController = useRef<AbortController | null>(null)
   useDialogFocus(dialogRef, onClose)
   useEffect(() => {
+    const controller = new AbortController()
+    void getReverseGeocodingStatus(controller.signal).then((status) => {
+      setGeocodingAvailability(status.configured ? 'configured' : 'unconfigured')
+    }).catch((reason: unknown) => {
+      if (!(reason instanceof DOMException && reason.name === 'AbortError')) {
+        setGeocodingAvailability('unavailable')
+      }
+    })
+    return () => controller.abort()
+  }, [])
+  useEffect(() => {
+    addressLookupController.current?.abort()
+    addressLookupController.current = null
     setValues(point ? { name: point.name, organization: point.organization, address: point.address, workingHours: point.workingHours, website: point.website, comment: point.comment } : EMPTY_TEXT)
     setLatitude(String(point?.latitude ?? coordinates.latitude))
     setLongitude(String(point?.longitude ?? coordinates.longitude))
     setValidationError(null)
+    setAddressLookup({ phase: 'idle' })
   }, [point, coordinates])
+  useEffect(() => () => addressLookupController.current?.abort(), [])
+
+  const findAddress = async (): Promise<void> => {
+    const controller = new AbortController()
+    addressLookupController.current?.abort()
+    addressLookupController.current = controller
+    setAddressLookup({ phase: 'loading' })
+    try {
+      const result = await resolveAddress(parseCoordinateInput(latitude), parseCoordinateInput(longitude), controller.signal)
+      if (result.address === null) {
+        setAddressLookup({ phase: 'empty', source: result.source })
+        return
+      }
+
+      setAddressLookup({ phase: 'success', address: result.address, source: result.source })
+    } catch (reason) {
+      if (reason instanceof DOMException && reason.name === 'AbortError') {
+        return
+      }
+      setAddressLookup({ phase: 'failed', message: reason instanceof Error ? reason.message : 'Address lookup failed.' })
+    } finally {
+      if (addressLookupController.current === controller) {
+        addressLookupController.current = null
+      }
+    }
+  }
+
+  const cancelAddressLookup = (): void => {
+    addressLookupController.current?.abort()
+    addressLookupController.current = null
+    setAddressLookup({ phase: 'cancelled' })
+  }
   const submit = (event: FormEvent): void => {
     event.preventDefault()
     try {
@@ -56,6 +118,17 @@ export function PointPanel({ point, coordinates, error, saving, onClose, onSave,
         {field('name')}
         {field('organization')}
         {field('address')}
+        <div className="address-lookup">
+          {geocodingAvailability === 'checking' && <p role="status">Checking address lookup availability…</p>}
+          {geocodingAvailability === 'unconfigured' && <p>Address lookup is not configured. You can enter the address manually.</p>}
+          {geocodingAvailability === 'unavailable' && <p>Address lookup is unavailable. Manual address entry remains available.</p>}
+          {geocodingAvailability === 'configured' && addressLookup.phase !== 'loading' && <button type="button" className="secondary-button" onClick={() => void findAddress()}>Find address from coordinates</button>}
+          {addressLookup.phase === 'loading' && <div className="address-lookup-progress" role="status"><span>Finding address…</span><button type="button" className="secondary-button" onClick={cancelAddressLookup}>Cancel lookup</button></div>}
+          {addressLookup.phase === 'cancelled' && <p role="status">Address lookup cancelled.</p>}
+          {addressLookup.phase === 'failed' && <p className="form-error" role="alert">{addressLookup.message}</p>}
+          {addressLookup.phase === 'empty' && <p role="status">No address was found for these coordinates. Source: <a href={addressLookup.source.url} target="_blank" rel="noopener noreferrer">{addressLookup.source.label}</a>.</p>}
+          {addressLookup.phase === 'success' && <div className="address-lookup-result"><p>{addressLookup.address}</p><small>Source: <a href={addressLookup.source.url} target="_blank" rel="noopener noreferrer">{addressLookup.source.label}</a></small><button type="button" className="secondary-button" onClick={() => setValues((current) => applyResolvedAddress(current, addressLookup.address))}>Use this address</button></div>}
+        </div>
         <div className="form-grid"><label>Latitude *<input inputMode="decimal" value={latitude} aria-required="true" onChange={(event) => setLatitude(event.target.value)} /></label><label>Longitude *<input inputMode="decimal" value={longitude} aria-required="true" onChange={(event) => setLongitude(event.target.value)} /></label></div>
         {field('workingHours')}
         {field('website', 'url')}

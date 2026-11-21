@@ -8,6 +8,7 @@ services:
       MAP_UPDATE_API_LOCAL_ONLY: "true"
       PORT: 4173
       GEOLISTS_MAPS_DIR: /app/data/maps
+      REVERSE_GEOCODING_URL: ${REVERSE_GEOCODING_URL:-}
     ports:
       - "127.0.0.1:4173:4173"
     volumes:
