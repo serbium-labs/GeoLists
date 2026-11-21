@@ -16,6 +16,7 @@ import {
 import { versionMapLibreWorkerUrl } from '../config/mapWorker'
 import type { MapPoint } from '../types/data'
 import type { Coordinates, MapSourceMode, MapViewport, OfflineRegion } from '../types/map'
+import { pointMarkerPresentation } from './MapView/pointMarker'
 
 const DEFAULT_CENTER: [number, number] = [0, 20]
 const DEFAULT_ZOOM = 2
@@ -37,10 +38,25 @@ interface Props {
   onViewportChange: (viewport: MapViewport) => void
 }
 
+interface PointMarkerRecord {
+  element: HTMLButtonElement
+  label: HTMLSpanElement
+  marker: Marker
+}
+
+function updatePointMarker(record: PointMarkerRecord, point: MapPoint, selected: boolean): void {
+  const presentation = pointMarkerPresentation(point.name, selected)
+  record.element.className = presentation.className
+  record.element.setAttribute('aria-label', presentation.accessibleLabel)
+  record.element.setAttribute('aria-pressed', presentation.pressed)
+  record.label.textContent = point.name
+  record.marker.setLngLat([point.longitude, point.latitude])
+}
+
 export function MapView({ requestedMode, mapRevision, activeRegion, points, activeListId, focusedPoint, onMapClick, onPointOpen, onRequestOnline, onSourceStateChange, onViewportChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
-  const markersRef = useRef(new Map<string, Marker>())
+  const markersRef = useRef(new Map<string, PointMarkerRecord>())
   const onMapClickRef = useRef(onMapClick)
   const onPointOpenRef = useRef(onPointOpen)
   const pointsRef = useRef(points)
@@ -81,7 +97,7 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
     map.on('moveend', reportViewport)
     mapRef.current = map
     return () => {
-      markersRef.current.forEach((marker) => marker.remove())
+      markersRef.current.forEach((record) => record.marker.remove())
       markersRef.current.clear()
       map.remove()
       mapRef.current = null
@@ -204,25 +220,43 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
     const map = mapRef.current
     if (!map) return
     const visibleIds = new Set(points.map((point) => point.id))
-    markersRef.current.forEach((marker, id) => {
-      if (!visibleIds.has(id)) { marker.remove(); markersRef.current.delete(id) }
+    markersRef.current.forEach((record, id) => {
+      if (!visibleIds.has(id)) {
+        record.marker.remove()
+        markersRef.current.delete(id)
+      }
     })
     points.forEach((point) => {
-      const position: [number, number] = [point.longitude, point.latitude]
       const existing = markersRef.current.get(point.id)
-      if (existing) { existing.setLngLat(position); existing.getElement().setAttribute('aria-label', `Open ${point.name}`); return }
+      const selected = focusedPoint?.id === point.id
+      if (existing) {
+        updatePointMarker(existing, point, selected)
+        return
+      }
+
       const element = document.createElement('button')
-      element.className = 'point-marker'
       element.type = 'button'
-      element.setAttribute('aria-label', `Open ${point.name}`)
+      const pin = document.createElement('span')
+      pin.className = 'point-marker-pin'
+      pin.setAttribute('aria-hidden', 'true')
+      const label = document.createElement('span')
+      label.className = 'point-marker-label'
+      element.append(pin, label)
       element.addEventListener('click', (event) => {
         event.stopPropagation()
         const current = pointsRef.current.find((candidate) => candidate.id === point.id)
-        if (current) onPointOpenRef.current(current)
+        if (current) {
+          onPointOpenRef.current(current)
+        }
       })
-      markersRef.current.set(point.id, new Marker({ element, anchor: 'bottom' }).setLngLat(position).addTo(map))
+      const marker = new Marker({ element, anchor: 'bottom' })
+        .setLngLat([point.longitude, point.latitude])
+        .addTo(map)
+      const record = { element, label, marker }
+      updatePointMarker(record, point, selected)
+      markersRef.current.set(point.id, record)
     })
-  }, [points, activeListId])
+  }, [points, activeListId, focusedPoint?.id])
 
   useEffect(() => {
     if (!focusedPoint || !mapRef.current) return

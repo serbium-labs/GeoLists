@@ -1,4 +1,4 @@
-import type { KeyboardEvent, ReactElement } from 'react'
+import { useEffect, type KeyboardEvent, type ReactElement } from 'react'
 import { MAP_SOURCES } from '../config/mapSources'
 import type { MapList, MapPoint } from '../types/data'
 import type { MapSourceMode, MapViewport, OfflineRegion } from '../types/map'
@@ -15,6 +15,7 @@ interface Props {
   pointCounts: Record<string, number>
   activeListId: string | null
   points: MapPoint[]
+  selectedPointId: string | null
   loading: boolean
   onModeChange: (mode: MapSourceMode) => void
   onCreateList: () => void
@@ -44,7 +45,15 @@ function mapSourceStatusText(requestedMode: MapSourceMode, state: MapSourceState
 }
 
 export function Sidebar(props: Props): ReactElement {
-  const { requestedMode, mapSourceState, lists, pointCounts, activeListId, points, loading } = props
+  const { requestedMode, mapSourceState, lists, pointCounts, activeListId, points, selectedPointId, loading } = props
+  useEffect(() => {
+    if (!selectedPointId) {
+      return
+    }
+
+    document.getElementById(`point-entry-${selectedPointId}`)?.scrollIntoView({ block: 'nearest' })
+  }, [selectedPointId])
+
   const handleMapSourceKeyDown = (sourceMode: MapSourceMode, event: KeyboardEvent<HTMLButtonElement>): void => {
     const nextMode = mapSourceForKey(sourceMode, event.key)
     if (!nextMode) {
@@ -76,7 +85,10 @@ export function Sidebar(props: Props): ReactElement {
     {activeListId && <section className="sidebar-section points-section">
       <div className="section-heading"><h2>Points</h2><span>{points.length}</span></div>
       {points.length === 0 ? <p className="point-placeholder">Click the map to add a point</p> : <div className="point-list">
-        {points.map((point) => <button key={point.id} type="button" onClick={() => props.onOpenPoint(point)}><strong>{point.name}</strong><span>{formatCoordinates(point)}</span></button>)}
+        {points.map((point) => {
+          const selected = selectedPointId === point.id
+          return <button id={`point-entry-${point.id}`} key={point.id} type="button" className={selected ? 'selected' : ''} aria-current={selected ? 'true' : undefined} onClick={() => props.onOpenPoint(point)}><strong>{point.name}</strong><span>{formatCoordinates(point)}</span></button>
+        })}
       </div>}
     </section>}
 
