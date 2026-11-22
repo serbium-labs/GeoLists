@@ -21,4 +21,11 @@ describe('createLocalStyle', () => {
       url: 'pmtiles:///maps/spb.pmtiles?v=2026-11-13%20ready',
     })
   })
+
+  it('uses the selected region archive URL', () => {
+    vi.stubGlobal('window', { location: { origin: 'http://127.0.0.1:4173' } })
+    expect(createLocalStyle('region-revision', '/maps/regions/region-123.pmtiles').sources.protomaps).toMatchObject({
+      url: 'pmtiles:///maps/regions/region-123.pmtiles?v=region-revision',
+    })
+  })
 })

@@ -16,8 +16,14 @@ function request({ remoteAddress = '127.0.0.1', host = '127.0.0.1:4173', origin,
 describe('map update API security', () => {
   it('protects both map mutation endpoints without covering read-only status', () => {
     expect(isMapApiMutation('POST', '/api/maps/check')).toBe(true)
+    expect(isMapApiMutation('POST', '/api/geocoding/reverse')).toBe(true)
     expect(isMapApiMutation('POST', '/api/maps/update')).toBe(true)
     expect(isMapApiMutation('GET', '/api/maps/status')).toBe(false)
+    expect(isMapApiMutation('POST', '/api/regions/estimate')).toBe(true)
+    expect(isMapApiMutation('POST', '/api/regions/download')).toBe(true)
+    expect(isMapApiMutation('POST', '/api/regions/activate')).toBe(true)
+    expect(isMapApiMutation('POST', '/api/regions/cancel')).toBe(true)
+    expect(isMapApiMutation('GET', '/api/regions')).toBe(false)
   })
 
   it('allows a same-origin loopback request without a token', () => {

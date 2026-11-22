@@ -4,12 +4,28 @@ import { ImportPreviewDialog } from '../../components/ImportPreviewDialog'
 import { PointPanel } from '../../components/PointPanel'
 import { Sidebar } from '../../components/Sidebar'
 import type { MapDataContent } from '../../exchange/mapdata'
+import type { MapPoint } from '../../types/data'
 
 const PREVIEW: MapDataContent = {
   format: 'geolists.mapdata',
   version: 1,
   list: { id: 'list', name: 'Places', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
   points: [],
+}
+
+const POINT: MapPoint = {
+  id: 'point-1',
+  listId: 'list',
+  name: 'Central Library',
+  organization: '',
+  address: '',
+  latitude: 52.52,
+  longitude: 13.405,
+  workingHours: '',
+  website: '',
+  comment: '',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
 }
 
 describe('component accessibility semantics', () => {
@@ -40,7 +56,7 @@ describe('component accessibility semantics', () => {
       phase: 'active' as const,
       error: null,
     }
-    const markup = renderToStaticMarkup(<Sidebar requestedMode="online" mapSourceState={mapSourceState} lists={[]} pointCounts={{}} activeListId={null} points={[]} loading onModeChange={vi.fn()} onCreateList={vi.fn()} onSelectList={vi.fn()} onRenameList={vi.fn()} onDeleteList={vi.fn()} onOpenPoint={vi.fn()} onExport={vi.fn()} onImport={vi.fn()} onMapInstalled={vi.fn()} />)
+    const markup = renderToStaticMarkup(<Sidebar requestedMode="online" mapSourceState={mapSourceState} lists={[]} pointCounts={{}} activeListId={null} points={[]} selectedPointId={null} loading viewport={null} onModeChange={vi.fn()} onCreateList={vi.fn()} onSelectList={vi.fn()} onRenameList={vi.fn()} onDeleteList={vi.fn()} onOpenPoint={vi.fn()} onExport={vi.fn()} onImport={vi.fn()} onMapInstalled={vi.fn()} onActiveRegion={vi.fn()} onRegionActivated={vi.fn()} />)
 
     expect(markup).toContain('aria-label="Loading lists"')
     expect(markup).toContain('role="radiogroup"')
@@ -50,5 +66,22 @@ describe('component accessibility semantics', () => {
     expect(markup).toContain('id="map-source-local"')
     expect(markup).toContain('aria-checked="false"')
     expect(markup).toContain('tabindex="-1"')
+  })
+
+  it('exposes the selected point in the sidebar', () => {
+    const mapSourceState = {
+      requestId: 1,
+      requestedMode: 'online' as const,
+      requestedRevision: '',
+      activeMode: 'online' as const,
+      activeRevision: '',
+      phase: 'active' as const,
+      error: null,
+    }
+    const markup = renderToStaticMarkup(<Sidebar requestedMode="online" mapSourceState={mapSourceState} lists={[]} pointCounts={{}} activeListId="list" points={[POINT]} selectedPointId={POINT.id} loading={false} viewport={null} onModeChange={vi.fn()} onCreateList={vi.fn()} onSelectList={vi.fn()} onRenameList={vi.fn()} onDeleteList={vi.fn()} onOpenPoint={vi.fn()} onExport={vi.fn()} onImport={vi.fn()} onMapInstalled={vi.fn()} onActiveRegion={vi.fn()} onRegionActivated={vi.fn()} />)
+
+    expect(markup).toContain('id="point-entry-point-1"')
+    expect(markup).toContain('class="selected"')
+    expect(markup).toContain('aria-current="true"')
   })
 })

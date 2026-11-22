@@ -22,7 +22,30 @@ describe('inspectLocalArchive', () => {
     }))
     vi.stubGlobal('fetch', fetchMock)
     await inspectLocalArchive(controller().signal, '2026-11-13')
-    expect(fetchMock).toHaveBeenCalledWith('/maps/spb.pmtiles?v=2026-11-13', expect.any(Object))
+    expect(fetchMock).toHaveBeenCalledWith('/maps/spb.pmtiles?v=2026-11-13', expect.objectContaining({ cache: 'force-cache' }))
+  })
+
+  it('does not read a validated archive version again', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('PMTiles', {
+      status: 206,
+      headers: { 'content-range': 'bytes 0-6/100' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await inspectLocalArchive(controller().signal, 'cached-version')
+    await inspectLocalArchive(controller().signal, 'cached-version')
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('checks the selected region archive instead of the legacy URL', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('PMTiles', {
+      status: 206,
+      headers: { 'content-range': 'bytes 0-6/100' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    await inspectLocalArchive(controller().signal, 'region-revision', '/maps/regions/region-123.pmtiles')
+    expect(fetchMock).toHaveBeenCalledWith('/maps/regions/region-123.pmtiles?v=region-revision', expect.any(Object))
   })
 
   it('distinguishes a missing archive from an invalid one', async () => {

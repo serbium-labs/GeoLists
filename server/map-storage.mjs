@@ -7,7 +7,8 @@ const DEFAULT_MIN_FREE_BYTES = 536_870_912
 const DEFAULT_MAX_REGION_AREA_KM2 = 10_000
 const DEFAULT_MAX_ZOOM = 15
 const DEFAULT_RETAINED_INACTIVE_ARCHIVES = 1
-const ARCHIVE_NAME_PATTERN = /^spb-[\w.-]+\.pmtiles$/
+const ARCHIVE_NAME_PATTERN = /^(?:spb-[\w.-]+|region-[a-f\d-]{36})\.pmtiles$/
+const UPDATE_ARCHIVE_NAME_PATTERN = /^spb-[\w.-]+\.pmtiles$/
 const KILOMETRES_PER_LATITUDE_DEGREE = 111.32
 
 function positiveInteger(value, fallback) {
@@ -70,17 +71,17 @@ async function managedArchives(mapsDir) {
 
 export async function applyRetentionPolicy({ mapsDir, activeFile, retainedInactiveArchives }) {
   const archives = await managedArchives(mapsDir)
-  const inactive = archives.filter((archive) => archive.name !== activeFile)
-  const retainedNames = new Set(inactive
+  const inactiveUpdates = archives.filter((archive) => archive.name !== activeFile && UPDATE_ARCHIVE_NAME_PATTERN.test(archive.name))
+  const retainedNames = new Set(inactiveUpdates
     .slice(0, retainedInactiveArchives)
     .map((archive) => archive.name))
-  const removable = inactive.filter((archive) => !retainedNames.has(archive.name))
+  const removable = inactiveUpdates.filter((archive) => !retainedNames.has(archive.name))
 
   for (const archive of removable) {
     await unlink(archive.path)
   }
 
-  return archives.filter((archive) => archive.name === activeFile || retainedNames.has(archive.name))
+  return archives.filter((archive) => !removable.includes(archive))
 }
 
 export async function ensureDownloadCapacity({ mapsDir, manifest, activeFile, limits, statfsImpl = statfs }) {
@@ -90,7 +91,7 @@ export async function ensureDownloadCapacity({ mapsDir, manifest, activeFile, li
     activeFile,
     retainedInactiveArchives: limits.retainedInactiveArchives,
   })
-  const targetName = `spb-${manifest.version}.pmtiles`
+  const targetName = manifest.file || `spb-${manifest.version}.pmtiles`
   const storedBytes = retained
     .filter((archive) => archive.name !== targetName)
     .reduce((total, archive) => total + archive.size, 0)

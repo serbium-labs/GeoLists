@@ -90,4 +90,16 @@ describe('offline map storage limits', () => {
     await expect(readFile(recoveryPath, 'utf8')).resolves.toBe('recovery')
     await expect(readFile(obsoletePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
   })
+
+  it('never removes explicitly installed custom regions during update retention', async () => {
+    const mapsDir = await mapsDirectory()
+    const customPath = join(mapsDir, 'region-12345678-1234-1234-1234-123456789abc.pmtiles')
+    await writeFile(customPath, 'custom region')
+    await writeFile(join(mapsDir, 'spb-old.pmtiles'), 'old update')
+    await writeFile(join(mapsDir, 'spb-new.pmtiles'), 'new update')
+
+    await applyRetentionPolicy({ mapsDir, activeFile: 'spb-new.pmtiles', retainedInactiveArchives: 1 })
+
+    await expect(readFile(customPath, 'utf8')).resolves.toBe('custom region')
+  })
 })

@@ -6,8 +6,8 @@ const SOURCE_ID = 'protomaps'
  * Offline-only style: every URL is same-origin. The preparation script installs
  * the Cyrillic/Latin Noto Sans glyph ranges used by the label layers.
  */
-export function createLocalStyle(revision?: string): StyleSpecification {
-  const archiveUrl = revision ? `/maps/spb.pmtiles?v=${encodeURIComponent(revision)}` : '/maps/spb.pmtiles'
+export function createLocalStyle(revision?: string, localArchiveUrl = '/maps/spb.pmtiles'): StyleSpecification {
+  const archiveUrl = revision ? `${localArchiveUrl}?v=${encodeURIComponent(revision)}` : localArchiveUrl
   return {
     version: 8,
     glyphs: `${window.location.origin}/map-assets/fonts/{fontstack}/{range}.pbf`,

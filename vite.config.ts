@@ -6,6 +6,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api/maps': 'http://127.0.0.1:4173',
+      '/api/geocoding': 'http://127.0.0.1:4173',
       '/maps': 'http://127.0.0.1:4173',
     },
   },
