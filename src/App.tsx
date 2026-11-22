@@ -10,8 +10,10 @@ import type { Coordinates, MapSourceMode, MapViewport, OfflineRegion } from './t
 import { initialMapSourceState, type MapSourceState } from './config/mapSourceSwitch'
 import { createMapData, MAX_MAPDATA_BYTES, parseMapData, safeMapDataFilename, type MapDataContent } from './exchange/mapdata'
 
-function messageFrom(error: unknown) {
-  if (error instanceof ValidationError || error instanceof Error) return error.message
+function messageFrom(error: unknown): string {
+  if (error instanceof ValidationError || error instanceof Error) {
+    return error.message
+  }
   return 'Failed to save changes.'
 }
 
@@ -49,7 +51,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [importPreview, setImportPreview] = useState<MapDataContent | null>(null)
 
-  const refreshLists = useCallback(async () => {
+  const refreshLists = useCallback(async (): Promise<void> => {
     const { lists: nextLists, pointCounts: nextPointCounts } = await repository.getListsWithPointCounts()
     setLists(nextLists)
     setPointCounts(nextPointCounts)
@@ -64,34 +66,59 @@ export default function App() {
     setDraftCoordinates(null)
     setEditingPoint(null)
     setFocusedPoint(null)
-    if (!activeListId) { setPoints([]); return }
+    if (!activeListId) {
+      setPoints([])
+      return
+    }
     void repository.getPoints(activeListId).then(setPoints).catch((reason: unknown) => setError(messageFrom(reason)))
   }, [activeListId])
 
-  const createList = async () => {
+  const createList = async (): Promise<void> => {
     const name = window.prompt('New list name')
-    if (name === null) return
+    if (name === null) {
+      return
+    }
     try {
       setError(null)
       const list = await repository.createList(name)
       await refreshLists()
       setActiveListId(list.id)
-    } catch (reason) { setError(messageFrom(reason)) }
+    } catch (reason) {
+      setError(messageFrom(reason))
+    }
   }
 
-  const renameList = async (list: MapList) => {
+  const renameList = async (list: MapList): Promise<void> => {
     const name = window.prompt('New list name', list.name)
-    if (name === null) return
-    try { setError(null); await repository.renameList(list.id, name); await refreshLists() } catch (reason) { setError(messageFrom(reason)) }
+    if (name === null) {
+      return
+    }
+    try {
+      setError(null)
+      await repository.renameList(list.id, name)
+      await refreshLists()
+    } catch (reason) {
+      setError(messageFrom(reason))
+    }
   }
 
-  const deleteList = async (list: MapList) => {
-    if (!window.confirm(`Delete the list “${list.name}” and all its points?`)) return
-    try { setError(null); await repository.deleteList(list.id); await refreshLists() } catch (reason) { setError(messageFrom(reason)) }
+  const deleteList = async (list: MapList): Promise<void> => {
+    if (!window.confirm(`Delete the list “${list.name}” and all its points?`)) {
+      return
+    }
+    try {
+      setError(null)
+      await repository.deleteList(list.id)
+      await refreshLists()
+    } catch (reason) {
+      setError(messageFrom(reason))
+    }
   }
 
-  const savePoint = async (fields: PointFields) => {
-    if (!activeListId) return
+  const savePoint = async (fields: PointFields): Promise<void> => {
+    if (!activeListId) {
+      return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -107,11 +134,17 @@ export default function App() {
 
       setDraftCoordinates(null)
       setEditingPoint(null)
-    } catch (reason) { setError(messageFrom(reason)) } finally { setSaving(false) }
+    } catch (reason) {
+      setError(messageFrom(reason))
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const deletePoint = async () => {
-    if (!activeListId || !editingPoint || !window.confirm(`Delete the point “${editingPoint.name}”?`)) return
+  const deletePoint = async (): Promise<void> => {
+    if (!activeListId || !editingPoint || !window.confirm(`Delete the point “${editingPoint.name}”?`)) {
+      return
+    }
     try {
       setError(null)
       await repository.deletePoint(activeListId, editingPoint.id)
@@ -119,21 +152,27 @@ export default function App() {
       setPointCounts((current) => ({ ...current, [activeListId]: Math.max(0, (current[activeListId] ?? 0) - 1) }))
       setEditingPoint(null)
       setFocusedPoint(null)
-    } catch (reason) { setError(messageFrom(reason)) }
+    } catch (reason) {
+      setError(messageFrom(reason))
+    }
   }
 
-  const openPoint = (point: MapPoint) => {
+  const openPoint = (point: MapPoint): void => {
     setError(null)
     setDraftCoordinates(null)
     setEditingPoint(point)
     setFocusedPoint(point)
   }
 
-  const exportList = async () => {
+  const exportList = async (): Promise<void> => {
     const list = lists.find((candidate) => candidate.id === activeListId)
-    if (!list) return
+    if (!list) {
+      return
+    }
     const requestedName = window.prompt('Export file name', list.name)
-    if (requestedName === null) return
+    if (requestedName === null) {
+      return
+    }
     try {
       setError(null)
       const contents = await createMapData(list, await repository.getPoints(list.id))
@@ -143,19 +182,28 @@ export default function App() {
       anchor.download = safeMapDataFilename(requestedName)
       anchor.click()
       URL.revokeObjectURL(url)
-    } catch (reason) { setError(messageFrom(reason)) }
+    } catch (reason) {
+      setError(messageFrom(reason))
+    }
   }
 
-  const prepareImport = async (file: File) => {
+  const prepareImport = async (file: File): Promise<void> => {
     try {
       setError(null)
-      if (file.size > MAX_MAPDATA_BYTES) throw new Error('File size exceeds 10 MB.')
+      if (file.size > MAX_MAPDATA_BYTES) {
+        throw new Error('File size exceeds 10 MB.')
+      }
       setImportPreview(await parseMapData(await file.text()))
-    } catch (reason) { setImportPreview(null); setError(messageFrom(reason)) }
+    } catch (reason) {
+      setImportPreview(null)
+      setError(messageFrom(reason))
+    }
   }
 
-  const confirmImport = async () => {
-    if (!importPreview) return
+  const confirmImport = async (): Promise<void> => {
+    if (!importPreview) {
+      return
+    }
     setSaving(true)
     try {
       setError(null)
@@ -163,7 +211,11 @@ export default function App() {
       setImportPreview(null)
       await refreshLists()
       setActiveListId(imported.id)
-    } catch (reason) { setError(messageFrom(reason)) } finally { setSaving(false) }
+    } catch (reason) {
+      setError(messageFrom(reason))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const panelCoordinates = editingPoint ?? draftCoordinates

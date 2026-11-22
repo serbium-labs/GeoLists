@@ -81,7 +81,7 @@ describe('safe map installation', () => {
       mapsDir,
       pointerPath,
       fetchImpl: async () => archiveResponse(archive),
-    })).rejects.toThrow('Размер архива')
+    })).rejects.toThrow('Archive size')
   })
 
   it('reports an HTTP download failure without activating an archive', async () => {
@@ -104,7 +104,7 @@ describe('safe map installation', () => {
       mapsDir,
       pointerPath,
       fetchImpl: async () => response,
-    })).rejects.toThrow('небезопасный URL')
+    })).rejects.toThrow('insecure URL')
   })
 
   it('rejects a correctly hashed file that is not PMTiles v3', async () => {

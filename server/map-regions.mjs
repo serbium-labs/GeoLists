@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs'
 import { access, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
+import { ClientInputError } from './api-errors.mjs'
 import { validateDownloadLimits } from './map-storage.mjs'
 
 const ESTIMATE_SAFETY_FACTOR = 1.2
@@ -20,16 +21,16 @@ function validBounds(bounds) {
 
 function normalizedName(value) {
   if (typeof value !== 'string') {
-    throw new Error('Region name must be text')
+    throw new ClientInputError('Region name must be text')
   }
 
   const name = value.normalize('NFC').trim()
   if (!name) {
-    throw new Error('Region name is required')
+    throw new ClientInputError('Region name is required')
   }
 
   if (Array.from(name).length > MAX_REGION_NAME_LENGTH || /[\u0000-\u001f\u007f-\u009f]/u.test(name)) {
-    throw new Error(`Region name must contain at most ${MAX_REGION_NAME_LENGTH} printable characters`)
+    throw new ClientInputError(`Region name must contain at most ${MAX_REGION_NAME_LENGTH} printable characters`)
   }
 
   return name
@@ -37,15 +38,15 @@ function normalizedName(value) {
 
 export function validateRegionSelection(value, limits) {
   if (!value || !validBounds(value.bounds)) {
-    throw new Error('Region bounds must contain valid west, south, east, and north coordinates')
+    throw new ClientInputError('Region bounds must contain valid west, south, east, and north coordinates')
   }
 
   if (!Number.isSafeInteger(value.maxZoom) || value.maxZoom < 0) {
-    throw new Error('Region maximum zoom must be a non-negative integer')
+    throw new ClientInputError('Region maximum zoom must be a non-negative integer')
   }
 
   if (value.maxZoom > limits.maxZoom) {
-    throw new Error('Map zoom level exceeds the configured limit')
+    throw new ClientInputError('Map zoom level exceeds the configured limit', 422)
   }
 
   const selection = { name: normalizedName(value.name), bounds: value.bounds, maxZoom: value.maxZoom }

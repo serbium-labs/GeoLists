@@ -10,42 +10,42 @@ const point: MapPoint = {
 }
 
 describe('.mapdata', () => {
-  it('экспортируется и повторно импортируется', async () => {
+  it('exports and imports the same data', async () => {
     const parsed = await parseMapData(await createMapData(list, [point]))
     expect(parsed.list.name).toBe(list.name)
     expect(parsed.points).toHaveLength(1)
   })
 
-  it('сохраняет все метаданные и исходную точность координат', async () => {
+  it('preserves metadata and coordinate precision', async () => {
     const parsed = await parseMapData(await createMapData(list, [point]))
     const { listId: _listId, ...expected } = point
     expect(parsed.points[0]).toEqual(expected)
   })
 
-  it('отклоняет повреждённый JSON', async () => {
+  it('rejects malformed JSON', async () => {
     await expect(parseMapData('{broken')).rejects.toThrow('valid JSON')
   })
 
-  it('отклоняет неверную контрольную сумму', async () => {
+  it('rejects an invalid checksum', async () => {
     const exported = await createMapData(list, [point])
     await expect(parseMapData(exported.replace('Поставщики', 'Получатели'))).rejects.toThrow('Checksum mismatch')
   })
 
-  it('отклоняет дублирующиеся ID', async () => {
+  it('rejects duplicate IDs', async () => {
     const duplicate = { ...point, name: 'Вторая точка' }
     await expect(parseMapData(await createMapData(list, [point, duplicate]))).rejects.toThrow('duplicate IDs')
   })
 
-  it('отклоняет превышение размера', async () => {
+  it('rejects oversized input', async () => {
     await expect(parseMapData(' '.repeat(MAX_MAPDATA_BYTES + 1))).rejects.toThrow('10 MB')
   })
 
-  it('отклоняет опасный URL', async () => {
+  it('rejects an unsafe URL', async () => {
     const unsafe = { ...point, website: 'javascript:alert(1)' }
     await expect(parseMapData(await createMapData(list, [unsafe]))).rejects.toThrow('http or https')
   })
 
-  it('создаёт документированную ссылку 2ГИС в порядке longitude,latitude', () => {
+  it('creates a documented 2GIS URL in longitude-latitude order', () => {
     expect(buildTwoGisUrl(30.335112345, 59.934312345)).toBe('https://2gis.ru/geo/30.335112345%2C59.934312345')
   })
 })

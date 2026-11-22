@@ -7,7 +7,7 @@
 - `MapView` is the adapter around MapLibre and PMTiles. It owns map lifecycle, styles, markers, map loading and map-specific errors. It reports user intent through callbacks and does not persist lists or map-source preferences.
 - `MapUpdates` owns communication with the map status/check/update endpoints and presents update progress. It does not select a map style directly; a completed installation is reported to its parent.
 - Dialog components own dialog semantics, focus containment, Escape handling, and their local validation presentation. They do not perform persistence.
-- Geocoding is not currently implemented. A future geocoding boundary must own coordinate-to-address transport, cancellation, response validation, loading, empty, and error states. `MapView` should only report coordinates, and storage should only receive a user-confirmed address.
+- The reverse-geocoding service owns coordinate-to-address transport, cancellation, response validation, loading, empty, and error states. `MapView` only reports coordinates, and storage receives an address only after the user accepts the suggestion.
 
 ## State presentation rules
 

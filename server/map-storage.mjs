@@ -1,5 +1,6 @@
 import { readdir, stat, statfs, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
+import { ClientInputError } from './api-errors.mjs'
 
 const DEFAULT_MAX_ARCHIVE_BYTES = 1_073_741_824
 const DEFAULT_MAX_STORED_BYTES = 2_147_483_648
@@ -45,15 +46,15 @@ export function regionAreaKm2(bounds) {
 
 export function validateDownloadLimits(manifest, limits) {
   if (manifest.size > limits.maxArchiveBytes) {
-    throw new Error('Map archive exceeds the configured size limit')
+    throw new ClientInputError('Map archive exceeds the configured size limit', 422)
   }
 
   if (regionAreaKm2(manifest.bounds) > limits.maxRegionAreaKm2) {
-    throw new Error('Map region exceeds the configured area limit')
+    throw new ClientInputError('Map region exceeds the configured area limit', 422)
   }
 
   if (manifest.maxZoom > limits.maxZoom) {
-    throw new Error('Map zoom level exceeds the configured limit')
+    throw new ClientInputError('Map zoom level exceeds the configured limit', 422)
   }
 }
 

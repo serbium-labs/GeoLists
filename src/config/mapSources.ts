@@ -10,6 +10,8 @@ export type LocalArchiveStatus =
   | { available: true }
   | { available: false; reason: 'not-found' | 'invalid' | 'range-unsupported' | 'http' | 'network'; status?: number }
 
+type UnavailableArchiveStatus = Exclude<LocalArchiveStatus, { available: true }>
+
 export const MAP_SOURCES: Record<MapSourceMode, MapSource> = {
   local: {
     id: 'local',
@@ -40,18 +42,26 @@ export async function inspectLocalArchive(signal: AbortSignal, revision?: string
       signal,
     })
 
-    if (response.status === 404) return { available: false, reason: 'not-found', status: 404 }
-    if (!response.ok) return { available: false, reason: 'http', status: response.status }
+    if (response.status === 404) {
+      return { available: false, reason: 'not-found', status: 404 }
+    }
+    if (!response.ok) {
+      return { available: false, reason: 'http', status: response.status }
+    }
     if (response.status !== 206 || !response.headers.get('content-range')) {
       await response.body?.cancel()
       return { available: false, reason: 'range-unsupported', status: response.status }
     }
 
     const reader = response.body?.getReader()
-    if (!reader) return { available: false, reason: 'invalid' }
+    if (!reader) {
+      return { available: false, reason: 'invalid' }
+    }
     const { value } = await reader.read()
     await reader.cancel()
-    if (!value || value.byteLength < 7) return { available: false, reason: 'invalid' }
+    if (!value || value.byteLength < 7) {
+      return { available: false, reason: 'invalid' }
+    }
     const signature = new TextDecoder().decode(value.slice(0, 7))
     if (signature !== 'PMTiles') {
       return { available: false, reason: 'invalid' }
@@ -63,17 +73,21 @@ export async function inspectLocalArchive(signal: AbortSignal, revision?: string
 
     return { available: true }
   } catch (error: unknown) {
-    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
     return { available: false, reason: 'network' }
   }
 }
 
-export function localArchiveErrorMessage(status: Exclude<LocalArchiveStatus, { available: true }>): string {
-  switch (status.reason) {
-    case 'not-found': return 'The local map is not installed. Start the server with a prepared PMTiles archive or switch to the online map.'
-    case 'invalid': return 'The local map file is corrupted or is not a PMTiles archive.'
-    case 'range-unsupported': return 'The local map server does not support range requests. Run the map through the GeoLists server.'
-    case 'http': return `The server could not open the local map (HTTP ${status.status ?? 'error'}).`
-    case 'network': return 'The local map server is unavailable. During development, run npm run serve alongside Vite.'
-  }
+const LOCAL_ARCHIVE_ERROR_MESSAGES: Record<UnavailableArchiveStatus['reason'], (status: UnavailableArchiveStatus) => string> = {
+  'not-found': () => 'The local map is not installed. Start the server with a prepared PMTiles archive or switch to the online map.',
+  invalid: () => 'The local map file is corrupted or is not a PMTiles archive.',
+  'range-unsupported': () => 'The local map server does not support range requests. Run the map through the GeoLists server.',
+  http: (status) => `The server could not open the local map (HTTP ${status.status ?? 'error'}).`,
+  network: () => 'The local map server is unavailable. During development, run npm run serve alongside Vite.',
+}
+
+export function localArchiveErrorMessage(status: UnavailableArchiveStatus): string {
+  return LOCAL_ARCHIVE_ERROR_MESSAGES[status.reason](status)
 }

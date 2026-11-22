@@ -17,9 +17,13 @@ export function contentTypeFor(path) {
 }
 
 export function parseByteRange(range, size) {
-  if (!range) return null
+  if (!range) {
+    return null
+  }
   const match = /^bytes=(\d+)-(\d*)$/.exec(range)
-  if (!match) return { satisfiable: false, contentRange: `bytes */${size}` }
+  if (!match) {
+    return { satisfiable: false, contentRange: `bytes */${size}` }
+  }
   const start = Number(match[1])
   const end = match[2] ? Math.min(Number(match[2]), size - 1) : size - 1
   if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= size) {
@@ -32,6 +36,8 @@ export async function resolveStaticFile(pathname, distDir, fileExists = async (p
   const relative = normalize(decodeURIComponent(pathname)).replace(/^(\.\.(\/|\\|$))+/, '').replace(/^\//, '')
   const requested = join(distDir, relative || 'index.html')
   const insideDist = requested === distDir || requested.startsWith(`${distDir}${sep}`)
-  if (!insideDist) return null
+  if (!insideDist) {
+    return null
+  }
   return await fileExists(requested) ? requested : join(distDir, 'index.html')
 }

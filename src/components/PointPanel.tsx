@@ -111,7 +111,11 @@ export function PointPanel({ point, coordinates, error, saving, onClose, onSave,
     const requiredIndicator = rule.required ? ' *' : ''
     return <label>{rule.label}{requiredIndicator}<input type={type} value={values[name]} aria-required={rule.required} data-dialog-initial-focus={name === 'name' ? '' : undefined} onChange={(event) => setValues({ ...values, [name]: event.target.value })} /></label>
   }
-  return <div className="panel-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+  return <div className="panel-backdrop" onMouseDown={(event) => {
+    if (event.target === event.currentTarget) {
+      onClose()
+    }
+  }}>
     <section ref={dialogRef} className="point-panel" role="dialog" aria-modal="true" aria-labelledby="point-title" tabIndex={-1}>
       <header><div><h2 id="point-title">{point ? 'Point details' : 'New point'}</h2><p>WGS 84 · {formatCoordinate(Number(latitude))}, {formatCoordinate(Number(longitude))}</p></div><button type="button" className="close-button" aria-label="Close point details" onClick={onClose}>×</button></header>
       <form onSubmit={submit}>

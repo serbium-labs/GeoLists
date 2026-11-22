@@ -25,12 +25,16 @@ export function validManifest(value) {
 }
 
 export function activeArchivePath(mapsDir, file) {
-  if (typeof file !== 'string' || basename(file) !== file || !/^(?:spb-[\w.-]+|region-[a-f\d-]{36})\.pmtiles$/.test(file)) return null
+  if (typeof file !== 'string' || basename(file) !== file || !/^(?:spb-[\w.-]+|region-[a-f\d-]{36})\.pmtiles$/.test(file)) {
+    return null
+  }
   return join(mapsDir, file)
 }
 
 export function publicAvailable(manifest) {
-  if (!manifest) return null
+  if (!manifest) {
+    return null
+  }
   return {
     version: manifest.version,
     size: manifest.size,

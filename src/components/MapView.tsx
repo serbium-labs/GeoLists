@@ -197,8 +197,25 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
   }, [])
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
-    const map = new maplibregl.Map({ container: containerRef.current, style: EMPTY_STYLE, center: activeRegion?.center ?? DEFAULT_CENTER, zoom: activeRegion ? Math.min(activeRegion.maxZoom, 11) : DEFAULT_ZOOM, attributionControl: { compact: true }, locale: { 'NavigationControl.ZoomIn': 'Zoom in', 'NavigationControl.ZoomOut': 'Zoom out', 'NavigationControl.ResetBearing': 'Reset bearing' } })
+    if (!containerRef.current || mapRef.current) {
+      return
+    }
+
+    let map: MapLibreMap
+    try {
+      map = new maplibregl.Map({ container: containerRef.current, style: EMPTY_STYLE, center: activeRegion?.center ?? DEFAULT_CENTER, zoom: activeRegion ? Math.min(activeRegion.maxZoom, 11) : DEFAULT_ZOOM, attributionControl: { compact: true }, locale: { 'NavigationControl.ZoomIn': 'Zoom in', 'NavigationControl.ZoomOut': 'Zoom out', 'NavigationControl.ResetBearing': 'Reset bearing' } })
+    } catch {
+      const failed = failMapSourceSwitch(
+        sourceStateRef.current,
+        sourceStateRef.current.requestId,
+        'The map requires WebGL2, which is unavailable in this browser or environment.',
+      )
+      sourceStateRef.current = failed
+      setSourceState(failed)
+      onSourceStateChangeRef.current(failed)
+      return
+    }
+
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right')
     map.on('click', POINT_INTERACTION_LAYER_IDS, (event: MapLayerMouseEvent) => {
       const pointId = event.features?.[0]?.properties?.id
@@ -379,7 +396,9 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
   }, [points, activeListId, focusedPoint?.id])
 
   useEffect(() => {
-    if (!focusedPoint || !mapRef.current) return
+    if (!focusedPoint || !mapRef.current) {
+      return
+    }
     mapRef.current.flyTo({ center: [focusedPoint.longitude, focusedPoint.latitude], zoom: Math.max(mapRef.current.getZoom(), POINT_SELECTION_ZOOM) })
   }, [focusedPoint])
 

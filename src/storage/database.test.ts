@@ -28,41 +28,41 @@ afterEach(async () => {
 })
 
 describe('GeoListsRepository', () => {
-  it('создаёт список', async () => {
+  it('creates a list', async () => {
     const list = await repository.createList(' Поставщики ')
     expect(list.name).toBe('Поставщики')
     expect(await repository.getLists()).toEqual([list])
   })
 
-  it('переименовывает список', async () => {
+  it('renames a list', async () => {
     const list = await repository.createList('Первый')
     const renamed = await repository.renameList(list.id, 'Второй')
     expect(renamed.name).toBe('Второй')
     expect((await repository.getLists())[0]?.name).toBe('Второй')
   })
 
-  it('создаёт точку существующего списка', async () => {
+  it('creates a point in an existing list', async () => {
     const list = await repository.createList('Поставщики')
     const point = await repository.createPoint(list.id, validPoint)
     expect(point.listId).toBe(list.id)
     expect(await repository.getPoints(list.id)).toEqual([point])
   })
 
-  it('редактирует точку активного списка', async () => {
+  it('updates a point in the active list', async () => {
     const list = await repository.createList('Поставщики')
     const point = await repository.createPoint(list.id, validPoint)
     const updated = await repository.updatePoint(list.id, point.id, { ...validPoint, name: 'Офис', latitude: 60 })
     expect(updated).toMatchObject({ name: 'Офис', latitude: 60 })
   })
 
-  it('удаляет точку', async () => {
+  it('deletes a point', async () => {
     const list = await repository.createList('Поставщики')
     const point = await repository.createPoint(list.id, validPoint)
     await repository.deletePoint(list.id, point.id)
     expect(await repository.getPoints(list.id)).toEqual([])
   })
 
-  it('каскадно удаляет точки в транзакции со списком', async () => {
+  it('deletes list points atomically with the list', async () => {
     const list = await repository.createList('Поставщики')
     await repository.createPoint(list.id, validPoint)
     await repository.createPoint(list.id, { ...validPoint, name: 'Офис' })
@@ -71,24 +71,24 @@ describe('GeoListsRepository', () => {
     expect(await db.points.count()).toBe(0)
   })
 
-  it('отклоняет некорректные координаты', async () => {
+  it('rejects invalid coordinates', async () => {
     const list = await repository.createList('Поставщики')
     await expect(repository.createPoint(list.id, { ...validPoint, latitude: Number.NaN })).rejects.toThrow('Latitude')
     await expect(repository.createPoint(list.id, { ...validPoint, longitude: 181 })).rejects.toThrow('Longitude')
   })
 
-  it('отклоняет пустые названия', async () => {
+  it('rejects empty names', async () => {
     await expect(repository.createList('   ')).rejects.toThrow('List name')
     const list = await repository.createList('Поставщики')
     await expect(repository.createPoint(list.id, { ...validPoint, name: '\t' })).rejects.toThrow('Point name')
   })
 
-  it('отклоняет URL без http/https', async () => {
+  it('rejects URLs without HTTP or HTTPS', async () => {
     const list = await repository.createList('Поставщики')
     await expect(repository.createPoint(list.id, { ...validPoint, website: 'javascript:alert(1)' })).rejects.toThrow('http or https')
   })
 
-  it('сохраняет и читает данные после повторного открытия IndexedDB', async () => {
+  it('persists data after reopening IndexedDB', async () => {
     const name = db.name
     const list = await repository.createList('Поставщики')
     await repository.createPoint(list.id, validPoint)
@@ -100,7 +100,7 @@ describe('GeoListsRepository', () => {
     reopened.close()
   })
 
-  it('импортирует список атомарно с новыми UUID', async () => {
+  it('imports a list atomically with new UUIDs', async () => {
     const sourceList = await repository.createList('Источник')
     const sourcePoint = await repository.createPoint(sourceList.id, validPoint)
     const data = await parseMapData(await createMapData(sourceList, [sourcePoint]))
@@ -111,7 +111,7 @@ describe('GeoListsRepository', () => {
     expect(importedPoints[0]).toMatchObject({ name: sourcePoint.name, longitude: sourcePoint.longitude })
   })
 
-  it('не оставляет частично импортированный список при ошибке транзакции', async () => {
+  it('does not leave a partial import after a transaction failure', async () => {
     const sourceList = await repository.createList('Источник')
     const first = await repository.createPoint(sourceList.id, validPoint)
     const second = await repository.createPoint(sourceList.id, { ...validPoint, name: 'Вторая' })

@@ -2,6 +2,7 @@ import { createReadStream } from 'node:fs'
 import { access, mkdir, readFile, stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { extname, join, resolve } from 'node:path'
+import { ClientInputError, publicErrorResponse } from './api-errors.mjs'
 import { contentTypeFor, parseByteRange, resolveStaticFile } from './http-utils.mjs'
 import { installMapArchive } from './map-installer.mjs'
 import { authorizeMapApiMutation, isMapApiMutation } from './map-api-security.mjs'
@@ -66,7 +67,9 @@ async function activeInfo() {
   try {
     const info = JSON.parse(await readFile(pointerPath, 'utf8'))
     const path = activeArchivePath(mapsDir, info.file)
-    if (!path || typeof info.version !== 'string') return null
+    if (!path || typeof info.version !== 'string') {
+      return null
+    }
     await access(path)
     return { ...info, bounds: info.bounds || [29.4, 59.63, 31.05, 60.25], maxZoom: info.maxZoom ?? 15, path }
   } catch {
@@ -81,7 +84,7 @@ async function readJsonBody(req) {
   for await (const chunk of req) {
     size += chunk.length
     if (size > 16_384) {
-      throw new Error('Request body is too large')
+      throw new ClientInputError('Request body is too large', 413)
     }
     chunks.push(chunk)
   }
@@ -89,7 +92,7 @@ async function readJsonBody(req) {
   try {
     return JSON.parse(Buffer.concat(chunks).toString('utf8'))
   } catch {
-    throw new Error('Request body must be valid JSON')
+    throw new ClientInputError('Request body must be valid JSON')
   }
 }
 
@@ -176,13 +179,23 @@ async function startRegionDownload(selection) {
 }
 
 async function checkUpdate() {
-  if (!updateManifestUrl) throw new Error('MAP_UPDATE_MANIFEST_URL не настроен')
-  if (!/^https:\/\//.test(updateManifestUrl)) throw new Error('URL манифеста должен использовать HTTPS')
+  if (!updateManifestUrl) {
+    throw new Error('MAP_UPDATE_MANIFEST_URL is not configured')
+  }
+  if (!/^https:\/\//.test(updateManifestUrl)) {
+    throw new Error('The manifest URL must use HTTPS')
+  }
   const response = await fetch(updateManifestUrl, { cache: 'no-store', signal: AbortSignal.timeout(15_000) })
-  if (!response.ok) throw new Error(`Манифест обновления: HTTP ${response.status}`)
-  if (!response.url.startsWith('https://')) throw new Error('Манифест перенаправлен на небезопасный URL')
+  if (!response.ok) {
+    throw new Error(`Update manifest: HTTP ${response.status}`)
+  }
+  if (!response.url.startsWith('https://')) {
+    throw new Error('The manifest was redirected to an insecure URL')
+  }
   const manifest = withSpatialMetadata(await response.json())
-  if (!validManifest(manifest)) throw new Error('Некорректный манифест обновления')
+  if (!validManifest(manifest)) {
+    throw new Error('Invalid update manifest')
+  }
   validateDownloadLimits(manifest, mapStorageLimits)
   const active = await activeInfo()
   state.available = { ...manifest, currentVersion: active?.version || null, updateAvailable: manifest.version !== active?.version }
@@ -190,11 +203,18 @@ async function checkUpdate() {
 }
 
 async function installUpdate() {
-  if (['downloading', 'verifying'].includes(state.phase)) throw new Error('Обновление уже выполняется')
+  if (['downloading', 'verifying'].includes(state.phase)) {
+    throw new Error('An update is already in progress')
+  }
   const manifest = state.available || await checkUpdate()
-  if (!manifest.updateAvailable) return
+  if (!manifest.updateAvailable) {
+    return
+  }
   const active = await activeInfo()
-  state.phase = 'downloading'; state.received = 0; state.total = manifest.size; state.error = ''
+  state.phase = 'downloading'
+  state.received = 0
+  state.total = manifest.size
+  state.error = ''
   try {
     await installMapArchive({
       manifest,
@@ -217,7 +237,8 @@ async function installUpdate() {
     state.available = { ...manifest, currentVersion: manifest.version, updateAvailable: false }
     state.phase = 'complete'
   } catch (error) {
-    state.phase = 'failed'; state.error = error instanceof Error ? error.message : 'Ошибка обновления'
+    state.phase = 'failed'
+    state.error = error instanceof Error ? error.message : 'Update failed'
   }
 }
 
@@ -240,7 +261,9 @@ createServer(async (req, res) => {
       return
     }
 
-    if (url.pathname === '/health' && req.method === 'GET') return sendJson(res, 200, { status: 'ok' })
+    if (url.pathname === '/health' && req.method === 'GET') {
+      return sendJson(res, 200, { status: 'ok' })
+    }
     if (url.pathname === '/api/maps/status' && req.method === 'GET') {
       const active = await activeInfo()
       return sendJson(res, 200, {
@@ -303,12 +326,20 @@ createServer(async (req, res) => {
       return sendJson(res, 200, await checkUpdate())
     }
     if (url.pathname === '/api/maps/update' && req.method === 'POST') {
-      if (['downloading', 'verifying'].includes(state.phase)) return sendJson(res, 409, { error: 'Загрузка уже выполняется' })
-      void installUpdate().catch((error) => { state.phase = 'failed'; state.error = error instanceof Error ? error.message : 'Ошибка обновления' })
+      if (['downloading', 'verifying'].includes(state.phase)) {
+        return sendJson(res, 409, { error: 'A download is already in progress' })
+      }
+      void installUpdate().catch((error) => {
+        state.phase = 'failed'
+        state.error = error instanceof Error ? error.message : 'Update failed'
+      })
       return sendJson(res, 202, { accepted: true })
     }
     if (url.pathname === '/maps/spb.pmtiles') {
-      const active = await activeInfo(); if (!active) return sendJson(res, 404, { error: 'Архив карты не установлен' })
+      const active = await activeInfo()
+      if (!active) {
+        return sendJson(res, 404, { error: 'The map archive is not installed' })
+      }
       const cachePolicy = archiveResponsePolicy(url.searchParams.get('v'), active.version)
       if (!cachePolicy.servable) {
         return sendJson(res, 404, { error: 'The requested archive version is no longer active' })
@@ -330,8 +361,16 @@ createServer(async (req, res) => {
       return serveFile(req, res, join(mapsDir, region.file), cachePolicy.cacheControl)
     }
     const file = await resolveStaticFile(url.pathname, distDir)
-    if (!file) return sendJson(res, 403, { error: 'Forbidden' })
+    if (!file) {
+      return sendJson(res, 403, { error: 'Forbidden' })
+    }
     const cacheControl = extname(file) === '.html' ? NO_STORE_CACHE_CONTROL : IMMUTABLE_ARCHIVE_CACHE_CONTROL
     return serveFile(req, res, file, cacheControl)
-  } catch (error) { return sendJson(res, 500, { error: error instanceof Error ? error.message : 'Server error' }) }
+  } catch (error) {
+    const response = publicErrorResponse(error)
+    if (response.internal) {
+      console.error('Request failed', error)
+    }
+    return sendJson(res, response.status, response.body)
+  }
 }).listen(port, host, () => console.log(`GeoLists: http://${host}:${port}`))
