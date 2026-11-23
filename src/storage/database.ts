@@ -30,8 +30,8 @@ export class GeoListsRepository {
 
   async getListsWithPointCounts(): Promise<ListsWithPointCounts> {
     return this.db.transaction('r', this.db.lists, this.db.points, async () => {
-      const lists = await this.getLists()
-      const pointCounts = Object.fromEntries(lists.map((list) => [list.id, 0])) as Record<string, number>
+      const lists: MapList[] = await this.getLists()
+      const pointCounts: Record<string, number> = Object.fromEntries(lists.map((list: MapList) => [list.id, 0]))
 
       await this.db.points.orderBy('listId').eachKey((listId) => {
         if (typeof listId === 'string' && Object.hasOwn(pointCounts, listId)) {
@@ -48,18 +48,18 @@ export class GeoListsRepository {
   }
 
   async createList(name: string): Promise<MapList> {
-    const now = new Date().toISOString()
+    const now: string = new Date().toISOString()
     const list: MapList = { id: crypto.randomUUID(), name: validateListName(name), createdAt: now, updatedAt: now }
     await this.db.lists.add(list)
     return list
   }
 
   async renameList(id: string, name: string): Promise<MapList> {
-    const list = await this.db.lists.get(id)
+    const list: MapList | undefined = await this.db.lists.get(id)
     if (!list) {
       throw new Error('List not found.')
     }
-    const updated = { ...list, name: validateListName(name), updatedAt: new Date().toISOString() }
+    const updated: MapList = { ...list, name: validateListName(name), updatedAt: new Date().toISOString() }
     await this.db.lists.put(updated)
     return updated
   }
@@ -75,8 +75,8 @@ export class GeoListsRepository {
   }
 
   async createPoint(listId: string, input: PointFields): Promise<MapPoint> {
-    const values = validatePointFields(input)
-    const now = new Date().toISOString()
+    const values: PointFields = validatePointFields(input)
+    const now: string = new Date().toISOString()
     const point: MapPoint = { ...values, id: crypto.randomUUID(), listId, createdAt: now, updatedAt: now }
     await this.db.transaction('rw', this.db.lists, this.db.points, async () => {
       if (!(await this.db.lists.get(listId))) {
@@ -88,12 +88,12 @@ export class GeoListsRepository {
   }
 
   async updatePoint(listId: string, id: string, input: PointFields): Promise<MapPoint> {
-    const values = validatePointFields(input)
+    const values: PointFields = validatePointFields(input)
     return this.db.transaction('rw', this.db.lists, this.db.points, async () => {
       if (!(await this.db.lists.get(listId))) {
         throw new Error('The active list no longer exists.')
       }
-      const point = await this.db.points.get(id)
+      const point: MapPoint | undefined = await this.db.points.get(id)
       if (!point || point.listId !== listId) {
         throw new Error('The point does not belong to the active list.')
       }
@@ -105,7 +105,7 @@ export class GeoListsRepository {
 
   async deletePoint(listId: string, id: string): Promise<void> {
     await this.db.transaction('rw', this.db.points, async () => {
-      const point = await this.db.points.get(id)
+      const point: MapPoint | undefined = await this.db.points.get(id)
       if (!point || point.listId !== listId) {
         throw new Error('The point does not belong to the active list.')
       }

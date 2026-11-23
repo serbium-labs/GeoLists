@@ -1,7 +1,7 @@
 import type { PointFields } from '../types/data'
+import { APP_CONFIG } from '../config/appConfig'
 import { validateAddress, validateCoordinates } from '../storage/validation'
-
-const GEOCODING_HEADERS = { 'content-type': 'application/json', 'x-geolists-csrf': '1' }
+import { isNull } from '../utils/nullish'
 
 export interface GeocodingSource {
   label: string
@@ -19,7 +19,7 @@ export interface ReverseGeocodingResult {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+  return typeof value === 'object' && !isNull(value) && !Array.isArray(value)
 }
 
 function parseSource(value: unknown): GeocodingSource | null {
@@ -51,9 +51,9 @@ async function responseValue(response: Response): Promise<Record<string, unknown
 }
 
 export async function getReverseGeocodingStatus(signal: AbortSignal): Promise<ReverseGeocodingStatus> {
-  const response = await fetch('/api/geocoding/status', { cache: 'no-store', signal })
-  const value = await responseValue(response)
-  const source = parseSource(value.source)
+  const response: Response = await fetch(APP_CONFIG.api.geocodingStatus, { cache: 'no-store', signal })
+  const value: Record<string, unknown> = await responseValue(response)
+  const source: GeocodingSource | null = parseSource(value.source)
   if (typeof value.configured !== 'boolean' || (value.configured && !source)) {
     throw new Error('The address service returned an invalid status.')
   }
@@ -62,20 +62,20 @@ export async function getReverseGeocodingStatus(signal: AbortSignal): Promise<Re
 }
 
 export async function resolveAddress(latitude: number, longitude: number, signal: AbortSignal): Promise<ReverseGeocodingResult> {
-  const coordinates = validateCoordinates(latitude, longitude)
-  const response = await fetch('/api/geocoding/reverse', {
+  const coordinates: { latitude: number; longitude: number } = validateCoordinates(latitude, longitude)
+  const response: Response = await fetch(APP_CONFIG.api.reverseGeocoding, {
     method: 'POST',
-    headers: GEOCODING_HEADERS,
+    headers: APP_CONFIG.mutationHeaders,
     body: JSON.stringify(coordinates),
     signal,
   })
-  const value = await responseValue(response)
-  const source = parseSource(value.source)
-  const hasValidAddressType = value.address === null || typeof value.address === 'string'
+  const value: Record<string, unknown> = await responseValue(response)
+  const source: GeocodingSource | null = parseSource(value.source)
+  const hasValidAddressType: boolean = isNull(value.address) || typeof value.address === 'string'
   if (!source || !hasValidAddressType) {
     throw new Error('The address service returned an invalid result.')
   }
-  const address = value.address === null ? null : validateAddress(value.address)
+  const address: string | null = isNull(value.address) ? null : validateAddress(value.address)
 
   return { address, source }
 }

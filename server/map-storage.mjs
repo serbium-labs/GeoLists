@@ -1,6 +1,7 @@
 import { readdir, stat, statfs, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ClientInputError } from './api-errors.mjs'
+import { HttpStatus, REGION_COORDINATE_LIMITS } from './server-config.mjs'
 
 const DEFAULT_MAX_ARCHIVE_BYTES = 1_073_741_824
 const DEFAULT_MAX_STORED_BYTES = 2_147_483_648
@@ -38,7 +39,8 @@ export function storageLimits(env = process.env) {
 
 export function regionAreaKm2(bounds) {
   const [west, south, east, north] = bounds
-  const middleLatitudeRadians = ((south + north) / 2) * Math.PI / 180
+  const decimalDegreesPerHalfCircle = REGION_COORDINATE_LIMITS.longitudeDegrees.maximum
+  const middleLatitudeRadians = ((south + north) / 2) * Math.PI / decimalDegreesPerHalfCircle
   const width = (east - west) * KILOMETRES_PER_LATITUDE_DEGREE * Math.cos(middleLatitudeRadians)
   const height = (north - south) * KILOMETRES_PER_LATITUDE_DEGREE
   return Math.abs(width * height)
@@ -46,15 +48,15 @@ export function regionAreaKm2(bounds) {
 
 export function validateDownloadLimits(manifest, limits) {
   if (manifest.size > limits.maxArchiveBytes) {
-    throw new ClientInputError('Map archive exceeds the configured size limit', 422)
+    throw new ClientInputError('Map archive exceeds the configured size limit', HttpStatus.UNPROCESSABLE_CONTENT)
   }
 
   if (regionAreaKm2(manifest.bounds) > limits.maxRegionAreaKm2) {
-    throw new ClientInputError('Map region exceeds the configured area limit', 422)
+    throw new ClientInputError('Map region exceeds the configured area limit', HttpStatus.UNPROCESSABLE_CONTENT)
   }
 
   if (manifest.maxZoom > limits.maxZoom) {
-    throw new ClientInputError('Map zoom level exceeds the configured limit', 422)
+    throw new ClientInputError('Map zoom level exceeds the configured limit', HttpStatus.UNPROCESSABLE_CONTENT)
   }
 }
 

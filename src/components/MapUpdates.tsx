@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { APP_CONFIG, MeasurementUnit } from '../config/appConfig'
+import { isUndefined } from '../utils/nullish'
 
-const MAP_MUTATION_HEADERS = { 'x-geolists-csrf': '1' }
 export const MAP_UPDATE_POLL_INTERVAL_MS = 1_000
 
 export type MapUpdateStatus = {
@@ -17,9 +18,14 @@ export const formatMapSize = (bytes?: number): string => {
   if (!bytes) {
     return ''
   }
-  const units = ['B', 'KB', 'MB', 'GB']
-  let value = bytes
-  let unit = 0
+  const units: MeasurementUnit[] = [
+    MeasurementUnit.Byte,
+    MeasurementUnit.Kilobyte,
+    MeasurementUnit.Megabyte,
+    MeasurementUnit.Gigabyte,
+  ]
+  let value: number = bytes
+  let unit: number = 0
   while (value >= 1024 && unit < units.length - 1) {
     value /= 1024
     unit += 1
@@ -38,14 +44,14 @@ export function MapUpdates({ onInstalled }: Props) {
   const knownVersion = useRef<string | null | undefined>(undefined)
 
   const refresh = async (): Promise<MapUpdateStatus> => {
-    const response = await fetch('/api/maps/status', { cache: 'no-store' })
+    const response: Response = await fetch(APP_CONFIG.api.mapStatus, { cache: 'no-store' })
     if (!response.ok) {
       throw new Error('Map management is available when running npm run serve')
     }
-    const next = await response.json() as MapUpdateStatus
+    const next: MapUpdateStatus = await response.json() as MapUpdateStatus
     setStatus(next)
-    const version = next.active?.version ?? null
-    if (knownVersion.current === undefined) {
+    const version: string | null = next.active?.version ?? null
+    if (isUndefined(knownVersion.current)) {
       knownVersion.current = version
       return next
     }
@@ -60,8 +66,8 @@ export function MapUpdates({ onInstalled }: Props) {
     setBusy(true)
     setMessage('')
     try {
-      const response = await fetch('/api/maps/check', { method: 'POST', headers: MAP_MUTATION_HEADERS })
-      const value = await response.json() as { version?: string; updateAvailable?: boolean; error?: string }
+      const response: Response = await fetch(APP_CONFIG.api.mapCheck, { method: 'POST', headers: APP_CONFIG.mutationHeaders })
+      const value: { version?: string; updateAvailable?: boolean; error?: string } = await response.json()
       if (!response.ok) {
         throw new Error(value.error || 'Failed to check the map')
       }
@@ -75,7 +81,7 @@ export function MapUpdates({ onInstalled }: Props) {
   }
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled: boolean = false
     void refresh().catch((error: unknown) => {
       if (!cancelled) {
         setMessage(error instanceof Error ? error.message : 'Local server is unavailable')
@@ -90,7 +96,7 @@ export function MapUpdates({ onInstalled }: Props) {
     if (!status || !['downloading', 'verifying'].includes(status.phase)) {
       return
     }
-    const timer = window.setInterval(() => void refresh().catch((error: unknown) => {
+    const timer: number = window.setInterval(() => void refresh().catch((error: unknown) => {
       setMessage(error instanceof Error ? error.message : 'Failed to get progress')
     }), MAP_UPDATE_POLL_INTERVAL_MS)
     return () => window.clearInterval(timer)
@@ -100,8 +106,8 @@ export function MapUpdates({ onInstalled }: Props) {
     setBusy(true)
     setMessage('')
     try {
-      const response = await fetch('/api/maps/update', { method: 'POST', headers: MAP_MUTATION_HEADERS })
-      const value = await response.json() as { error?: string }
+      const response: Response = await fetch(APP_CONFIG.api.mapUpdate, { method: 'POST', headers: APP_CONFIG.mutationHeaders })
+      const value: { error?: string } = await response.json()
       if (!response.ok) {
         throw new Error(value.error || 'Failed to start download')
       }
@@ -116,9 +122,9 @@ export function MapUpdates({ onInstalled }: Props) {
   if (!status) {
     return <div className="map-updates"><p className="map-update-note" role="status" aria-live="polite">{message || 'Checking offline map…'}</p></div>
   }
-  const percent = status.total ? Math.min(100, Math.round(status.received / status.total * 100)) : 0
-  const working = status.phase === 'downloading' || status.phase === 'verifying'
-  const downloadSize = status.total || status.available?.size
+  const percent: number = status.total ? Math.min(100, Math.round(status.received / status.total * 100)) : 0
+  const working: boolean = status.phase === 'downloading' || status.phase === 'verifying'
+  const downloadSize: number | undefined = status.total || status.available?.size
   return <div className="map-updates" aria-live="polite" aria-busy={busy || working}>
     <p>{status.active ? `Map installed: ${status.active.version}${status.active.size ? ` · ${formatMapSize(status.active.size)}` : ''}` : 'Offline map is not installed'}</p>
     {!status.active && status.available?.updateAvailable && <p className="map-update-available">Map available: {status.available.version} · {formatMapSize(status.available.size)}</p>}

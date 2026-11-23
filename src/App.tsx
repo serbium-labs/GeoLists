@@ -9,6 +9,7 @@ import type { MapList, MapPoint, PointFields } from './types/data'
 import type { Coordinates, MapSourceMode, MapViewport, OfflineRegion } from './types/map'
 import { initialMapSourceState, type MapSourceState } from './config/mapSourceSwitch'
 import { createMapData, MAX_MAPDATA_BYTES, parseMapData, safeMapDataFilename, type MapDataContent } from './exchange/mapdata'
+import { isNull } from './utils/nullish'
 
 function messageFrom(error: unknown): string {
   if (error instanceof ValidationError || error instanceof Error) {
@@ -52,7 +53,9 @@ export default function App() {
   const [importPreview, setImportPreview] = useState<MapDataContent | null>(null)
 
   const refreshLists = useCallback(async (): Promise<void> => {
-    const { lists: nextLists, pointCounts: nextPointCounts } = await repository.getListsWithPointCounts()
+    const result: { lists: MapList[]; pointCounts: Record<string, number> } = await repository.getListsWithPointCounts()
+    const { lists: nextLists, pointCounts: nextPointCounts } = result
+
     setLists(nextLists)
     setPointCounts(nextPointCounts)
     setActiveListId((current) => current && nextLists.some((list: MapList) => list.id === current) ? current : nextLists[0]?.id ?? null)
@@ -74,13 +77,13 @@ export default function App() {
   }, [activeListId])
 
   const createList = async (): Promise<void> => {
-    const name = window.prompt('New list name')
-    if (name === null) {
+    const name: string | null = window.prompt('New list name')
+    if (isNull(name)) {
       return
     }
     try {
       setError(null)
-      const list = await repository.createList(name)
+      const list: MapList = await repository.createList(name)
       await refreshLists()
       setActiveListId(list.id)
     } catch (reason) {
@@ -89,8 +92,8 @@ export default function App() {
   }
 
   const renameList = async (list: MapList): Promise<void> => {
-    const name = window.prompt('New list name', list.name)
-    if (name === null) {
+    const name: string | null = window.prompt('New list name', list.name)
+    if (isNull(name)) {
       return
     }
     try {
@@ -123,11 +126,11 @@ export default function App() {
     setError(null)
     try {
       if (editingPoint) {
-        const updatedPoint = await repository.updatePoint(activeListId, editingPoint.id, fields)
+        const updatedPoint: MapPoint = await repository.updatePoint(activeListId, editingPoint.id, fields)
         setPoints((current) => current.map((point) => point.id === updatedPoint.id ? updatedPoint : point))
         setFocusedPoint((current) => current?.id === updatedPoint.id ? updatedPoint : current)
       } else {
-        const createdPoint = await repository.createPoint(activeListId, fields)
+        const createdPoint: MapPoint = await repository.createPoint(activeListId, fields)
         setPoints((current) => [...current, createdPoint])
         setPointCounts((current) => ({ ...current, [activeListId]: (current[activeListId] ?? 0) + 1 }))
       }
@@ -165,19 +168,19 @@ export default function App() {
   }
 
   const exportList = async (): Promise<void> => {
-    const list = lists.find((candidate) => candidate.id === activeListId)
+    const list: MapList | undefined = lists.find((candidate: MapList): boolean => candidate.id === activeListId)
     if (!list) {
       return
     }
-    const requestedName = window.prompt('Export file name', list.name)
-    if (requestedName === null) {
+    const requestedName: string | null = window.prompt('Export file name', list.name)
+    if (isNull(requestedName)) {
       return
     }
     try {
       setError(null)
-      const contents = await createMapData(list, await repository.getPoints(list.id))
-      const url = URL.createObjectURL(new Blob([contents], { type: 'application/json;charset=utf-8' }))
-      const anchor = document.createElement('a')
+      const contents: string = await createMapData(list, await repository.getPoints(list.id))
+      const url: string = URL.createObjectURL(new Blob([contents], { type: 'application/json;charset=utf-8' }))
+      const anchor: HTMLAnchorElement = document.createElement('a')
       anchor.href = url
       anchor.download = safeMapDataFilename(requestedName)
       anchor.click()
@@ -207,7 +210,7 @@ export default function App() {
     setSaving(true)
     try {
       setError(null)
-      const imported = await repository.importMapData(importPreview)
+      const imported: MapList = await repository.importMapData(importPreview)
       setImportPreview(null)
       await refreshLists()
       setActiveListId(imported.id)
@@ -218,7 +221,7 @@ export default function App() {
     }
   }
 
-  const panelCoordinates = editingPoint ?? draftCoordinates
+  const panelCoordinates: Coordinates | null = editingPoint ?? draftCoordinates
   return <div className="app-shell">
     <Sidebar requestedMode={requestedMode} mapSourceState={mapSourceState} lists={lists} pointCounts={pointCounts} activeListId={activeListId} points={points} selectedPointId={focusedPoint?.id ?? null} loading={loading} viewport={mapViewport} onModeChange={requestMapMode} onCreateList={() => void createList()} onSelectList={setActiveListId} onRenameList={(list) => void renameList(list)} onDeleteList={(list) => void deleteList(list)} onOpenPoint={openPoint} onExport={() => void exportList()} onImport={(file) => void prepareImport(file)} onMapInstalled={(version) => { setActiveRegion(null); setMapRevision(version); requestMapMode('local') }} onActiveRegion={handleActiveRegion} onRegionActivated={handleRegionActivated} />
     <MapView requestedMode={requestedMode} mapRevision={mapRevision} activeRegion={activeRegion} points={points} activeListId={activeListId} focusedPoint={focusedPoint} onMapClick={(coordinates) => { setError(null); setEditingPoint(null); setFocusedPoint(null); setDraftCoordinates(coordinates) }} onPointOpen={openPoint} onRequestOnline={() => requestMapMode('online')} onSourceStateChange={handleMapSourceState} onViewportChange={setMapViewport} />

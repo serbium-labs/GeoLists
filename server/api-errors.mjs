@@ -1,5 +1,7 @@
+import { HttpStatus } from './server-config.mjs'
+
 export class ClientInputError extends Error {
-  constructor(message, status = 400) {
+  constructor(message, status = HttpStatus.BAD_REQUEST) {
     super(message)
     this.name = 'ClientInputError'
     this.status = status
@@ -11,5 +13,5 @@ export function publicErrorResponse(error) {
     return { status: error.status, body: { error: error.message }, internal: false }
   }
 
-  return { status: 500, body: { error: 'Server error' }, internal: true }
+  return { status: HttpStatus.INTERNAL_SERVER_ERROR, body: { error: 'Server error' }, internal: true }
 }

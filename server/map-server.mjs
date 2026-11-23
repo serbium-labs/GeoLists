@@ -24,21 +24,17 @@ import {
 import { applyRetentionPolicy, ensureDownloadCapacity, regionAreaKm2, storageLimits, validateDownloadLimits } from './map-storage.mjs'
 import { activeArchivePath, publicAvailable, validManifest, withSpatialMetadata } from './map-update-utils.mjs'
 import { createReverseGeocoder, GEOCODING_SOURCE, reverseGeocodingEndpoint, ReverseGeocodingError } from './reverse-geocoding.mjs'
-import { httpHost } from './server-config.mjs'
+import { defineServerConfig, HttpStatus, LEGACY_MAP_METADATA } from './server-config.mjs'
+
+const HTTPS_URL_PATTERN = /^https:\/\//
+const REGION_ARCHIVE_PATH_PATTERN = /^\/maps\/regions\/(region-[a-f\d-]{36})\.pmtiles$/
 
 const root = resolve(import.meta.dirname, '..')
-const distDir = join(root, 'dist')
-const mapsDir = resolve(process.env.GEOLISTS_MAPS_DIR || join(root, 'data/maps'))
-const pointerPath = join(mapsDir, 'active.json')
-const regionRegistryPath = join(mapsDir, 'regions.json')
-const port = Number(process.env.PORT || 4173)
-const host = httpHost(process.env)
 const updateConfigPath = join(root, 'config/map-updates.json')
 const updateConfig = await readFile(updateConfigPath, 'utf8').then(JSON.parse, () => ({ manifestUrl: '' }))
-const updateManifestUrl = process.env.MAP_UPDATE_MANIFEST_URL || updateConfig.manifestUrl || ''
+const serverConfig = defineServerConfig({ root, env: process.env, configuredManifestUrl: updateConfig.manifestUrl })
+const { currentBuildDate, distDir, host, mapsDir, pointerPath, port, regionRegistryPath, regionSourceUrl, updateManifestUrl } = serverConfig
 const mapStorageLimits = storageLimits(process.env)
-const currentBuildDate = new Date().toISOString().slice(0, 10).replaceAll('-', '')
-const regionSourceUrl = process.env.MAP_REGION_SOURCE_URL || `https://build.protomaps.com/${currentBuildDate}.pmtiles`
 const geocodingEndpoint = reverseGeocodingEndpoint(process.env)
 const reverseGeocodeAddress = geocodingEndpoint ? createReverseGeocoder({ endpoint: geocodingEndpoint }) : null
 if (!regionSourceUrl.startsWith('https://')) {
@@ -71,10 +67,17 @@ async function activeInfo() {
       return null
     }
     await access(path)
-    return { ...info, bounds: info.bounds || [29.4, 59.63, 31.05, 60.25], maxZoom: info.maxZoom ?? 15, path }
+    return { ...info, bounds: info.bounds || LEGACY_MAP_METADATA.bounds, maxZoom: info.maxZoom ?? LEGACY_MAP_METADATA.maxZoom, path }
   } catch {
     const legacy = join(root, 'public/maps/spb.pmtiles')
-    try { await access(legacy); return { version: 'manual', file: 'spb.pmtiles', bounds: [29.4, 59.63, 31.05, 60.25], maxZoom: 15, path: legacy } } catch { return null }
+
+    try {
+      await access(legacy)
+
+      return { version: 'manual', file: 'spb.pmtiles', ...LEGACY_MAP_METADATA, path: legacy }
+    } catch {
+      return null
+    }
   }
 }
 
@@ -84,7 +87,7 @@ async function readJsonBody(req) {
   for await (const chunk of req) {
     size += chunk.length
     if (size > 16_384) {
-      throw new ClientInputError('Request body is too large', 413)
+      throw new ClientInputError('Request body is too large', HttpStatus.CONTENT_TOO_LARGE)
     }
     chunks.push(chunk)
   }
@@ -182,7 +185,7 @@ async function checkUpdate() {
   if (!updateManifestUrl) {
     throw new Error('MAP_UPDATE_MANIFEST_URL is not configured')
   }
-  if (!/^https:\/\//.test(updateManifestUrl)) {
+  if (!HTTPS_URL_PATTERN.test(updateManifestUrl)) {
     throw new Error('The manifest URL must use HTTPS')
   }
   const response = await fetch(updateManifestUrl, { cache: 'no-store', signal: AbortSignal.timeout(15_000) })
@@ -247,11 +250,19 @@ async function serveFile(req, res, path, cacheControl = IMMUTABLE_ARCHIVE_CACHE_
   const headers = { 'content-type': contentTypeFor(path), 'accept-ranges': 'bytes', 'cache-control': cacheControl }
   const parsedRange = parseByteRange(range, info.size)
   if (parsedRange) {
-    if (!parsedRange.satisfiable) { res.writeHead(416, { 'content-range': parsedRange.contentRange }); return res.end() }
-    res.writeHead(206, { ...headers, 'content-range': parsedRange.contentRange, 'content-length': parsedRange.length })
+    if (!parsedRange.satisfiable) {
+      res.writeHead(HttpStatus.RANGE_NOT_SATISFIABLE, { 'content-range': parsedRange.contentRange })
+
+      return res.end()
+    }
+
+    res.writeHead(HttpStatus.PARTIAL_CONTENT, { ...headers, 'content-range': parsedRange.contentRange, 'content-length': parsedRange.length })
+
     return createReadStream(path, { start: parsedRange.start, end: parsedRange.end }).pipe(res)
   }
-  res.writeHead(200, { ...headers, 'content-length': info.size }); createReadStream(path).pipe(res)
+
+  res.writeHead(HttpStatus.OK, { ...headers, 'content-length': info.size })
+  createReadStream(path).pipe(res)
 }
 
 createServer(async (req, res) => {
@@ -262,11 +273,11 @@ createServer(async (req, res) => {
     }
 
     if (url.pathname === '/health' && req.method === 'GET') {
-      return sendJson(res, 200, { status: 'ok' })
+      return sendJson(res, HttpStatus.OK, { status: 'ok' })
     }
     if (url.pathname === '/api/maps/status' && req.method === 'GET') {
       const active = await activeInfo()
-      return sendJson(res, 200, {
+      return sendJson(res, HttpStatus.OK, {
         phase: state.phase,
         received: state.received,
         total: state.total,
@@ -277,19 +288,19 @@ createServer(async (req, res) => {
       })
     }
     if (url.pathname === '/api/regions' && req.method === 'GET') {
-      return sendJson(res, 200, await regionsStatus())
+      return sendJson(res, HttpStatus.OK, await regionsStatus())
     }
     if (url.pathname === '/api/geocoding/status' && req.method === 'GET') {
-      return sendJson(res, 200, { configured: Boolean(reverseGeocodeAddress), source: reverseGeocodeAddress ? GEOCODING_SOURCE : null })
+      return sendJson(res, HttpStatus.OK, { configured: Boolean(reverseGeocodeAddress), source: reverseGeocodeAddress ? GEOCODING_SOURCE : null })
     }
     if (url.pathname === '/api/geocoding/reverse' && req.method === 'POST') {
       if (!reverseGeocodeAddress) {
-        return sendJson(res, 503, { error: 'Address lookup is not configured' })
+        return sendJson(res, HttpStatus.SERVICE_UNAVAILABLE, { error: 'Address lookup is not configured' })
       }
 
       const value = await readJsonBody(req)
       try {
-        return sendJson(res, 200, await reverseGeocodeAddress({ latitude: value.latitude, longitude: value.longitude }))
+        return sendJson(res, HttpStatus.OK, await reverseGeocodeAddress({ latitude: value.latitude, longitude: value.longitude }))
       } catch (error) {
         if (error instanceof ReverseGeocodingError) {
           return sendJson(res, error.status, { error: error.message })
@@ -299,70 +310,70 @@ createServer(async (req, res) => {
     }
     if (url.pathname === '/api/regions/estimate' && req.method === 'POST') {
       const selection = validateRegionSelection(await readJsonBody(req), mapStorageLimits)
-      return sendJson(res, 200, { estimatedSize: estimateRegionSize(selection), areaKm2: regionAreaKm2(selection.bounds) })
+      return sendJson(res, HttpStatus.OK, { estimatedSize: estimateRegionSize(selection), areaKm2: regionAreaKm2(selection.bounds) })
     }
     if (url.pathname === '/api/regions/download' && req.method === 'POST') {
       if (regionOperation.phase === 'extracting') {
-        return sendJson(res, 409, { error: 'A region download is already running' })
+        return sendJson(res, HttpStatus.CONFLICT, { error: 'A region download is already running' })
       }
       const selection = validateRegionSelection(await readJsonBody(req), mapStorageLimits)
       void startRegionDownload(selection)
-      return sendJson(res, 202, { accepted: true })
+      return sendJson(res, HttpStatus.ACCEPTED, { accepted: true })
     }
     if (url.pathname === '/api/regions/cancel' && req.method === 'POST') {
       regionOperation.controller?.abort()
-      return sendJson(res, 202, { accepted: Boolean(regionOperation.controller) })
+      return sendJson(res, HttpStatus.ACCEPTED, { accepted: Boolean(regionOperation.controller) })
     }
     if (url.pathname === '/api/regions/activate' && req.method === 'POST') {
       const value = await readJsonBody(req)
       const region = typeof value.id === 'string' ? await findInstalledRegion({ id: value.id, registryPath: regionRegistryPath, mapsDir }) : null
       if (!region) {
-        return sendJson(res, 404, { error: 'Installed region not found' })
+        return sendJson(res, HttpStatus.NOT_FOUND, { error: 'Installed region not found' })
       }
       await activateRegion({ region, pointerPath })
-      return sendJson(res, 200, { active: publicRegion(region) })
+      return sendJson(res, HttpStatus.OK, { active: publicRegion(region) })
     }
     if (url.pathname === '/api/maps/check' && req.method === 'POST') {
-      return sendJson(res, 200, await checkUpdate())
+      return sendJson(res, HttpStatus.OK, await checkUpdate())
     }
     if (url.pathname === '/api/maps/update' && req.method === 'POST') {
       if (['downloading', 'verifying'].includes(state.phase)) {
-        return sendJson(res, 409, { error: 'A download is already in progress' })
+        return sendJson(res, HttpStatus.CONFLICT, { error: 'A download is already in progress' })
       }
       void installUpdate().catch((error) => {
         state.phase = 'failed'
         state.error = error instanceof Error ? error.message : 'Update failed'
       })
-      return sendJson(res, 202, { accepted: true })
+      return sendJson(res, HttpStatus.ACCEPTED, { accepted: true })
     }
     if (url.pathname === '/maps/spb.pmtiles') {
       const active = await activeInfo()
       if (!active) {
-        return sendJson(res, 404, { error: 'The map archive is not installed' })
+        return sendJson(res, HttpStatus.NOT_FOUND, { error: 'The map archive is not installed' })
       }
       const cachePolicy = archiveResponsePolicy(url.searchParams.get('v'), active.version)
       if (!cachePolicy.servable) {
-        return sendJson(res, 404, { error: 'The requested archive version is no longer active' })
+        return sendJson(res, HttpStatus.NOT_FOUND, { error: 'The requested archive version is no longer active' })
       }
 
       return serveFile(req, res, active.path, cachePolicy.cacheControl)
     }
-    const regionMatch = url.pathname.match(/^\/maps\/regions\/(region-[a-f\d-]{36})\.pmtiles$/)
+    const regionMatch = url.pathname.match(REGION_ARCHIVE_PATH_PATTERN)
     if (regionMatch) {
       const region = await findInstalledRegion({ id: regionMatch[1], registryPath: regionRegistryPath, mapsDir })
       if (!region) {
-        return sendJson(res, 404, { error: 'Region archive not found' })
+        return sendJson(res, HttpStatus.NOT_FOUND, { error: 'Region archive not found' })
       }
       const cachePolicy = archiveResponsePolicy(url.searchParams.get('v'), region.revision)
       if (!cachePolicy.servable) {
-        return sendJson(res, 404, { error: 'The requested region version is not available' })
+        return sendJson(res, HttpStatus.NOT_FOUND, { error: 'The requested region version is not available' })
       }
 
       return serveFile(req, res, join(mapsDir, region.file), cachePolicy.cacheControl)
     }
     const file = await resolveStaticFile(url.pathname, distDir)
     if (!file) {
-      return sendJson(res, 403, { error: 'Forbidden' })
+      return sendJson(res, HttpStatus.FORBIDDEN, { error: 'Forbidden' })
     }
     const cacheControl = extname(file) === '.html' ? NO_STORE_CACHE_CONTROL : IMMUTABLE_ARCHIVE_CACHE_CONTROL
     return serveFile(req, res, file, cacheControl)

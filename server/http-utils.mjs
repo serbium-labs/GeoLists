@@ -11,6 +11,9 @@ const MIME_TYPES = {
   '.json': 'application/json; charset=utf-8',
   '.pmtiles': 'application/vnd.pmtiles',
 }
+const BYTE_RANGE_PATTERN = /^bytes=(\d+)-(\d*)$/
+const PARENT_PATH_PREFIX_PATTERN = /^(\.\.(\/|\\|$))+/
+const LEADING_SLASH_PATTERN = /^\//
 
 export function contentTypeFor(path) {
   return MIME_TYPES[extname(path).toLowerCase()] || 'application/octet-stream'
@@ -20,7 +23,7 @@ export function parseByteRange(range, size) {
   if (!range) {
     return null
   }
-  const match = /^bytes=(\d+)-(\d*)$/.exec(range)
+  const match = BYTE_RANGE_PATTERN.exec(range)
   if (!match) {
     return { satisfiable: false, contentRange: `bytes */${size}` }
   }
@@ -33,7 +36,9 @@ export function parseByteRange(range, size) {
 }
 
 export async function resolveStaticFile(pathname, distDir, fileExists = async (path) => access(path).then(() => true, () => false)) {
-  const relative = normalize(decodeURIComponent(pathname)).replace(/^(\.\.(\/|\\|$))+/, '').replace(/^\//, '')
+  const relative = normalize(decodeURIComponent(pathname))
+    .replace(PARENT_PATH_PREFIX_PATTERN, '')
+    .replace(LEADING_SLASH_PATTERN, '')
   const requested = join(distDir, relative || 'index.html')
   const insideDist = requested === distDir || requested.startsWith(`${distDir}${sep}`)
   if (!insideDist) {

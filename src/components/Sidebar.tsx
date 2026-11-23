@@ -8,6 +8,7 @@ import { MapUpdates } from './MapUpdates'
 import { mapSourceForKey } from './mapSourceKeyboard'
 import { OfflineRegions } from './OfflineRegions'
 import { pageContainingPoint, pointPage } from './Sidebar/pointPagination'
+import { isPresent } from '../utils/nullish'
 
 interface Props {
   requestedMode: MapSourceMode
@@ -61,7 +62,7 @@ export function Sidebar(props: Props): ReactElement {
     }
 
     const selectedPage = pageContainingPoint(points, selectedPointId)
-    if (selectedPage !== null) {
+    if (isPresent(selectedPage)) {
       setPointPageIndex(selectedPage)
     }
   }, [points, selectedPointId])
@@ -98,7 +99,15 @@ export function Sidebar(props: Props): ReactElement {
       <button className="create-button" type="button" onClick={props.onCreateList}>+ Create list</button>
       <div className="exchange-actions">
         <button type="button" disabled={!activeListId} onClick={props.onExport}>Export</button>
-        <label>Import<input type="file" accept=".mapdata,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) props.onImport(file); event.currentTarget.value = '' }} /></label>
+        <label>Import<input type="file" accept=".mapdata,application/json" onChange={(event) => {
+          const file: File | undefined = event.target.files?.[0]
+
+          if (file) {
+            props.onImport(file)
+          }
+
+          event.currentTarget.value = ''
+        }} /></label>
       </div>
     </section>
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { MapList, MapPoint } from '../types/data'
-import { buildTwoGisUrl, createMapData, MAX_MAPDATA_BYTES, parseMapData } from './mapdata'
+import type { MapList, MapPoint } from '../../types/data'
+import { buildTwoGisUrl, createMapData, MAX_MAPDATA_BYTES, parseMapData } from '../../exchange/mapdata'
 
 const list: MapList = { id: 'list-source', name: 'Поставщики', createdAt: '2026-01-01T10:00:00.000Z', updatedAt: '2026-01-02T10:00:00.000Z' }
 const point: MapPoint = {

@@ -9,7 +9,9 @@ import {
   getReverseGeocodingStatus,
   resolveAddress,
   type GeocodingSource,
+  type ReverseGeocodingResult,
 } from '../services/reverseGeocoding'
+import { isNull } from '../utils/nullish'
 
 const EMPTY_TEXT = { name: '', organization: '', address: '', workingHours: '', website: '', comment: '' }
 
@@ -41,7 +43,7 @@ export function PointPanel({ point, coordinates, error, saving, onClose, onSave,
   const addressLookupController = useRef<AbortController | null>(null)
   useDialogFocus(dialogRef, onClose)
   useEffect(() => {
-    const controller = new AbortController()
+    const controller: AbortController = new AbortController()
     void getReverseGeocodingStatus(controller.signal).then((status) => {
       setGeocodingAvailability(status.configured ? 'configured' : 'unconfigured')
     }).catch((reason: unknown) => {
@@ -63,13 +65,17 @@ export function PointPanel({ point, coordinates, error, saving, onClose, onSave,
   useEffect(() => () => addressLookupController.current?.abort(), [])
 
   const findAddress = async (): Promise<void> => {
-    const controller = new AbortController()
+    const controller: AbortController = new AbortController()
     addressLookupController.current?.abort()
     addressLookupController.current = controller
     setAddressLookup({ phase: 'loading' })
     try {
-      const result = await resolveAddress(parseCoordinateInput(latitude), parseCoordinateInput(longitude), controller.signal)
-      if (result.address === null) {
+      const result: ReverseGeocodingResult = await resolveAddress(
+        parseCoordinateInput(latitude),
+        parseCoordinateInput(longitude),
+        controller.signal,
+      )
+      if (isNull(result.address)) {
         setAddressLookup({ phase: 'empty', source: result.source })
         return
       }
@@ -95,7 +101,7 @@ export function PointPanel({ point, coordinates, error, saving, onClose, onSave,
   const submit = (event: FormEvent): void => {
     event.preventDefault()
     try {
-      const fields = validatePointFields({
+      const fields: PointFields = validatePointFields({
         ...values,
         latitude: parseCoordinateInput(latitude),
         longitude: parseCoordinateInput(longitude),
@@ -107,8 +113,8 @@ export function PointPanel({ point, coordinates, error, saving, onClose, onSave,
     }
   }
   const field = (name: keyof typeof EMPTY_TEXT, type = 'text'): ReactElement => {
-    const rule = TEXT_FIELD_RULES[name]
-    const requiredIndicator = rule.required ? ' *' : ''
+    const rule: (typeof TEXT_FIELD_RULES)[keyof typeof TEXT_FIELD_RULES] = TEXT_FIELD_RULES[name]
+    const requiredIndicator: string = rule.required ? ' *' : ''
     return <label>{rule.label}{requiredIndicator}<input type={type} value={values[name]} aria-required={rule.required} data-dialog-initial-focus={name === 'name' ? '' : undefined} onChange={(event) => setValues({ ...values, [name]: event.target.value })} /></label>
   }
   return <div className="panel-backdrop" onMouseDown={(event) => {

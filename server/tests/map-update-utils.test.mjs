@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { activeArchivePath, publicAvailable, validManifest, withSpatialMetadata } from './map-update-utils.mjs'
+import { activeArchivePath, publicAvailable, validManifest, withSpatialMetadata } from '../map-update-utils.mjs'
 
 const manifest = {
   version: '2026-11-13',

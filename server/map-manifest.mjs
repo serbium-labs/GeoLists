@@ -1,16 +1,23 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { open, stat } from 'node:fs/promises'
+import { REGION_COORDINATE_LIMITS } from './server-config.mjs'
+
+const MAP_VERSION_PATTERN = /^[\w.-]{1,80}$/
 
 function validBounds(bounds) {
   return Array.isArray(bounds) && bounds.length === 4
     && bounds.every((coordinate) => Number.isFinite(coordinate))
-    && bounds[0] >= -180 && bounds[0] < bounds[2] && bounds[2] <= 180
-    && bounds[1] >= -90 && bounds[1] < bounds[3] && bounds[3] <= 90
+    && bounds[0] >= REGION_COORDINATE_LIMITS.longitudeDegrees.minimum
+    && bounds[0] < bounds[2]
+    && bounds[2] <= REGION_COORDINATE_LIMITS.longitudeDegrees.maximum
+    && bounds[1] >= REGION_COORDINATE_LIMITS.latitudeDegrees.minimum
+    && bounds[1] < bounds[3]
+    && bounds[3] <= REGION_COORDINATE_LIMITS.latitudeDegrees.maximum
 }
 
 export async function generateMapManifest({ archivePath, version, url, bounds, maxZoom }) {
-  if (typeof version !== 'string' || !/^[\w.-]{1,80}$/.test(version)) {
+  if (typeof version !== 'string' || !MAP_VERSION_PATTERN.test(version)) {
     throw new Error('The version may contain only letters, numbers, dots, hyphens, and underscores')
   }
   if (!validBounds(bounds)) {

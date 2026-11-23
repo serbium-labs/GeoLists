@@ -1,10 +1,16 @@
 import type { MapList, MapPoint, PointFields } from '../types/data'
+import { GEOGRAPHIC_COORDINATE_LIMITS } from '../config/appConfig'
 import { validateListName, validatePointFields, ValidationError } from '../storage/validation'
+import { isNull, isUndefined } from '../utils/nullish'
 
 export const MAPDATA_FORMAT = 'geolists.mapdata'
 export const MAPDATA_VERSION = 1
 export const MAX_MAPDATA_BYTES = 10 * 1024 * 1024
 export const MAX_MAPDATA_POINTS = 10_000
+const ISO_DATE_PREFIX_PATTERN = /^\d{4}-\d{2}-\d{2}T/
+const SHA256_PATTERN = /^[a-f0-9]{64}$/
+const UNSAFE_FILENAME_CHARACTER_PATTERN = /[\\/:*?"<>|\u0000-\u001f\u007f-\u009f]/g
+const SAFE_FILENAME_MAX_LENGTH = 180
 
 export type MapDataPoint = Omit<MapPoint, 'listId'>
 
@@ -27,7 +33,7 @@ export class MapDataError extends Error {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+  return typeof value === 'object' && !isNull(value) && !Array.isArray(value)
 }
 
 export function stableStringify(value: unknown): string {
@@ -37,8 +43,9 @@ export function stableStringify(value: unknown): string {
   if (isRecord(value)) {
     return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`
   }
-  const serialized = JSON.stringify(value)
-  if (serialized === undefined) {
+  const serialized: string | undefined = JSON.stringify(value)
+
+  if (isUndefined(serialized)) {
     throw new MapDataError('The file contains an unsupported value.')
   }
 
@@ -46,7 +53,8 @@ export function stableStringify(value: unknown): string {
 }
 
 async function sha256(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  const digest: ArrayBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
@@ -57,12 +65,14 @@ export async function createMapData(list: MapList, points: MapPoint[]): Promise<
     list: { id: list.id, name: list.name, createdAt: list.createdAt, updatedAt: list.updatedAt },
     points: points.map((point) => ({ id: point.id, name: point.name, organization: point.organization, address: point.address, latitude: point.latitude, longitude: point.longitude, workingHours: point.workingHours, website: point.website, comment: point.comment, createdAt: point.createdAt, updatedAt: point.updatedAt })),
   }
-  const checksum = await sha256(stableStringify(content))
+  const checksum: string = await sha256(stableStringify(content))
+
   return JSON.stringify({ ...content, checksum }, null, 2)
 }
 
 function readString(record: Record<string, unknown>, key: string): string {
-  const value = record[key]
+  const value: unknown = record[key]
+
   if (typeof value !== 'string') {
     throw new MapDataError(`The “${key}” field must be a string.`)
   }
@@ -71,8 +81,9 @@ function readString(record: Record<string, unknown>, key: string): string {
 }
 
 function readIsoDate(record: Record<string, unknown>, key: string): string {
-  const value = readString(record, key)
-  if (!/^\d{4}-\d{2}-\d{2}T/.test(value) || !Number.isFinite(Date.parse(value)) || value.length > 40) {
+  const value: string = readString(record, key)
+
+  if (!ISO_DATE_PREFIX_PATTERN.test(value) || !Number.isFinite(Date.parse(value)) || value.length > 40) {
     throw new MapDataError(`The “${key}” field contains an invalid date.`)
   }
   return value
@@ -82,7 +93,8 @@ function validatePoint(value: unknown): MapDataPoint {
   if (!isRecord(value)) {
     throw new MapDataError('Invalid point structure.')
   }
-  const id = readString(value, 'id')
+  const id: string = readString(value, 'id')
+
   if (!id || id.length > 100) {
     throw new MapDataError('Invalid point ID.')
   }
@@ -134,47 +146,76 @@ export async function parseMapData(text: string): Promise<MapDataContent> {
   if (raw.points.length > MAX_MAPDATA_POINTS) {
     throw new MapDataError(`The file contains more than ${MAX_MAPDATA_POINTS} points.`)
   }
-  const checksum = raw.checksum
-  if (typeof checksum !== 'string' || !/^[a-f0-9]{64}$/.test(checksum)) {
+  const checksum: unknown = raw.checksum
+
+  if (typeof checksum !== 'string' || !SHA256_PATTERN.test(checksum)) {
     throw new MapDataError('Invalid checksum.')
   }
 
-  const contentForHash = { format: raw.format, version: raw.version, list: raw.list, points: raw.points }
+  const contentForHash: Record<string, unknown> = {
+    format: raw.format,
+    version: raw.version,
+    list: raw.list,
+    points: raw.points,
+  }
+
   if ((await sha256(stableStringify(contentForHash))) !== checksum) {
     throw new MapDataError('Checksum mismatch: the file is corrupted or has been modified.')
   }
 
-  const listId = readString(raw.list, 'id')
+  const listId: string = readString(raw.list, 'id')
+
   if (!listId || listId.length > 100) {
     throw new MapDataError('Invalid list ID.')
   }
   let name: string
-  try { name = validateListName(readString(raw.list, 'name')) } catch (error) {
+
+  try {
+    name = validateListName(readString(raw.list, 'name'))
+  } catch (error: unknown) {
     if (error instanceof ValidationError) {
       throw new MapDataError(error.message)
     }
     throw error
   }
-  const points = raw.points.map(validatePoint)
-  const ids = new Set<string>([listId])
+  const points: MapDataPoint[] = raw.points.map(validatePoint)
+  const ids: Set<string> = new Set<string>([listId])
+
   for (const point of points) {
     if (ids.has(point.id)) {
       throw new MapDataError('The file contains duplicate IDs.')
     }
     ids.add(point.id)
   }
-  return { format: MAPDATA_FORMAT, version: MAPDATA_VERSION, list: { id: listId, name, createdAt: readIsoDate(raw.list, 'createdAt'), updatedAt: readIsoDate(raw.list, 'updatedAt') }, points }
+  return {
+    format: MAPDATA_FORMAT,
+    version: MAPDATA_VERSION,
+    list: {
+      id: listId,
+      name,
+      createdAt: readIsoDate(raw.list, 'createdAt'),
+      updatedAt: readIsoDate(raw.list, 'updatedAt'),
+    },
+    points,
+  }
 }
 
 export function buildTwoGisUrl(longitude: number, latitude: number): string {
-  if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180 || !Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+  const invalidLongitude: boolean = !Number.isFinite(longitude)
+    || longitude < GEOGRAPHIC_COORDINATE_LIMITS.longitude.minimum
+    || longitude > GEOGRAPHIC_COORDINATE_LIMITS.longitude.maximum
+  const invalidLatitude: boolean = !Number.isFinite(latitude)
+    || latitude < GEOGRAPHIC_COORDINATE_LIMITS.latitude.minimum
+    || latitude > GEOGRAPHIC_COORDINATE_LIMITS.latitude.maximum
+
+  if (invalidLongitude || invalidLatitude) {
     throw new MapDataError('Invalid coordinates for the 2GIS link.')
   }
   return `https://2gis.ru/geo/${encodeURIComponent(`${longitude},${latitude}`)}`
 }
 
 export function safeMapDataFilename(value: string): string {
-  const normalized = value.normalize('NFC').trim().replace(/[\\/:*?"<>|\u0000-\u001f\u007f-\u009f]/g, '_')
-  const cleaned = Array.from(normalized).slice(0, 180).join('') || 'geolists'
+  const normalized: string = value.normalize('NFC').trim().replace(UNSAFE_FILENAME_CHARACTER_PATTERN, '_')
+  const cleaned: string = Array.from(normalized).slice(0, SAFE_FILENAME_MAX_LENGTH).join('') || 'geolists'
   return cleaned.toLowerCase().endsWith('.mapdata') ? cleaned : `${cleaned}.mapdata`
 }

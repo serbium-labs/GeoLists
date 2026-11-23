@@ -31,6 +31,7 @@ Core working principles:
 - Keep the condition and its braced body visually distinct and consistently formatted.
 - Deeply nested loops, callbacks, and blocks must be eliminated through decomposition.
 - Conditions should read as meaningful statements. Extract complex boolean expressions into clearly named variables or functions.
+- Long or complex `if` conditions must be moved into clearly named predicate functions or methods that communicate the decision being made.
 
 ### 3.2. Key-Based Selection
 
@@ -45,6 +46,9 @@ Core working principles:
 - Magic numbers and unexplained literals are prohibited.
 - Meaningful values must be extracted into named constants.
 - Constants must use `UPPER_SNAKE_CASE` naming.
+- Regular expressions must be extracted into named `RegExp` constants instead of being declared inline.
+- Shared units and error codes must be defined once as global enums. Numeric values must not be repeated across modules to represent the same unit or error.
+- Numeric bounds and limits must use named constants and document their meaning and units. Values such as map zoom levels must state whether they are logical levels, pixels, bytes, milliseconds, or another unit.
 - Variable, function, type, and module names must communicate their purpose without requiring inspection of the implementation.
 - Abbreviations are allowed only when they are widely understood and do not reduce readability.
 
@@ -52,12 +56,13 @@ Core working principles:
 
 - Strict type checking is mandatory.
 - Types for parameters, return values, state, component properties, and contracts between layers must always be declared explicitly.
+- All function parameters and variables declared inside functions must have explicit types. Do not rely on inference for local declarations.
 - Unrestricted types are prohibited. When input data is unknown, use a safe unknown type and narrow it before use.
 - Type assertions must not hide design errors or bypass compiler checks.
 - External data is untrusted and must be validated at the system boundary before use.
 - Incoming state values must be validated whenever they cross an untrusted boundary, including restored, persisted, remotely supplied, or user-controlled state.
 - Correctly distinguish falsy values from nullish values. Do not treat `false`, `0`, or an empty string as absent when they are valid values.
-- Use explicit nullish checks and nullish fallback behavior when only `null` or `undefined` should be considered missing.
+- Avoid direct comparisons with `null` and `undefined`. Use a clear presence check such as `!value` when every falsy value is invalid, and use a named nullish predicate or nullish fallback when `false`, `0`, or an empty string is valid.
 - Shared contracts must have a single source of truth and must not be duplicated across layers.
 
 ### 3.5. Decomposition
@@ -68,6 +73,7 @@ Core working principles:
 - Pure transformations and shared operations must be extracted into utilities.
 - External communication and side effects must be isolated from the presentation layer.
 - Large functions and components must be split when they perform multiple independent tasks or require excessive effort to understand.
+- Large configuration literals must be moved into separate, explicitly typed objects. Construction code should pass a named typed options object, such as `TMapProps`, rather than building a long inline configuration.
 - Public module interfaces must remain minimal. Internal implementation details must not be exported without a clear reason.
 - Duplication should be removed only when the resulting abstraction remains clear and represents a genuinely shared responsibility.
 
@@ -77,11 +83,19 @@ Core working principles:
 - Dead code, commented-out implementations, and unused dependencies are prohibited.
 - Errors must be handled explicitly and must never be silently ignored.
 - Insert a blank line between logically distinct operations, including after variable declarations, between independent conditional blocks, and between function definitions.
+- Separate variable declarations, control-flow blocks, and method calls with blank lines. Keep consecutive declarations or calls together only when they form one cohesive operation.
 - Do not add blank lines that separate a single logical operation or reduce local readability.
 - Formatting and static analysis rules must be applied consistently and automatically.
 - Compiler, linter, and test warnings must not remain unresolved without a documented reason.
 
-### 3.7. Engineering Principles
+### 3.7. Application Configuration
+
+- Application-wide configuration and shared constants must be centralized in two authoritative boundary modules: one for the client and one for the server.
+- Use the framework's typed configuration helper, such as `defineConfig`, when one is available.
+- Module-specific `DEFAULT_*` constants must remain local to the module that owns them, but callers must be able to override those defaults through explicit configuration.
+- Configuration modules must expose typed, minimal contracts and must not duplicate values already defined by another configuration source.
+
+### 3.8. Engineering Principles
 
 - **DRY — Don't Repeat Yourself:** keep each piece of knowledge and each shared rule in one authoritative place. Remove meaningful duplication, but do not force unrelated code into a premature abstraction.
 - **KISS — Keep It Simple:** prefer the clearest and least complex solution that fully satisfies the requirements.
@@ -144,8 +158,9 @@ components/
 
 - Tests must be stored in a dedicated test directory and kept separate from production code.
 - The test directory structure must clearly associate each test with the module or functional area it verifies.
+- Tests must follow every applicable rule in this document, including typing, naming, formatting, decomposition, and explicit error handling.
 - Tests should cover observable behavior, public contracts, business rules, edge cases, and error handling.
-- Do not test obvious behavior, implementation details, language features, or the behavior of third-party libraries.
+- Do not test obvious parameters or values, implementation details, language features, or the behavior of third-party libraries.
 - A test must not duplicate the implementation of the code under test.
 - Every test must be deterministic, independent, and named to describe the expected behavior clearly.
 - External dependencies should be replaced only at system boundaries. Excessive mocking that couples tests to implementation details is prohibited.

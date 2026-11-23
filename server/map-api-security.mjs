@@ -1,4 +1,6 @@
 import { timingSafeEqual } from 'node:crypto'
+import { HttpStatus } from './server-config.mjs'
+import { isUndefined } from './value-utils.mjs'
 
 export const MAP_API_CSRF_HEADER = 'x-geolists-csrf'
 export const MAP_API_CSRF_VALUE = '1'
@@ -11,6 +13,8 @@ const MAP_API_MUTATION_PATHS = new Set([
   '/api/regions/cancel',
   '/api/geocoding/reverse',
 ])
+const IPV4_LOOPBACK_PATTERN = /^127\./
+const IPV4_MAPPED_LOOPBACK_PATTERN = /^::ffff:127\./i
 
 export function isMapApiMutation(method, pathname) {
   return method === 'POST' && MAP_API_MUTATION_PATHS.has(pathname)
@@ -21,7 +25,7 @@ function isLoopbackAddress(address) {
     return false
   }
 
-  return address === '::1' || /^127\./.test(address) || /^::ffff:127\./i.test(address)
+  return address === '::1' || IPV4_LOOPBACK_PATTERN.test(address) || IPV4_MAPPED_LOOPBACK_PATTERN.test(address)
 }
 
 function isTrustedLocalDeployment(request, env) {
@@ -59,7 +63,7 @@ function hasValidConfiguredToken(request, configuredToken) {
 
 function isSameOrigin(request) {
   const origin = request.headers.origin
-  if (origin === undefined) {
+  if (isUndefined(origin)) {
     return true
   }
 
@@ -83,19 +87,19 @@ export function authorizeMapApiMutation(request, env = process.env) {
   const hasConfiguredToken = typeof configuredToken === 'string' && configuredToken.length > 0
 
   if (hasConfiguredToken && !hasValidConfiguredToken(request, configuredToken)) {
-    return denied(401, 'Map update API authentication required')
+    return denied(HttpStatus.UNAUTHORIZED, 'Map update API authentication required')
   }
 
   if (!hasConfiguredToken && !isTrustedLocalDeployment(request, env)) {
-    return denied(403, 'Map update API is disabled for external access')
+    return denied(HttpStatus.FORBIDDEN, 'Map update API is disabled for external access')
   }
 
   if (request.headers[MAP_API_CSRF_HEADER] !== MAP_API_CSRF_VALUE) {
-    return denied(403, 'Map update API CSRF validation failed')
+    return denied(HttpStatus.FORBIDDEN, 'Map update API CSRF validation failed')
   }
 
   if (!isSameOrigin(request)) {
-    return denied(403, 'Map update API origin validation failed')
+    return denied(HttpStatus.FORBIDDEN, 'Map update API origin validation failed')
   }
 
   return { allowed: true }

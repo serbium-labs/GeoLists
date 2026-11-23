@@ -5,18 +5,25 @@ import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { ClientInputError } from './api-errors.mjs'
 import { validateDownloadLimits } from './map-storage.mjs'
+import { HttpStatus, REGION_COORDINATE_LIMITS } from './server-config.mjs'
 
 const ESTIMATE_SAFETY_FACTOR = 1.2
 const TILE_BYTES_BY_ZOOM = [131_072, 131_072, 131_072, 131_072, 131_072, 131_072, 131_072, 131_072, 131_072, 65_536, 65_536, 65_536, 32_768, 32_768, 16_384, 16_384]
 const MAX_REGION_NAME_LENGTH = 80
 const CUSTOM_REGION_ID_PATTERN = /^region-[a-f\d-]{36}$/
 const REGION_ID_PATTERN = /^(?:region-[a-f\d-]{36}|legacy)$/
+const PRINTABLE_REGION_NAME_PATTERN = /^[^\u0000-\u001f\u007f-\u009f]*$/u
+const MANAGED_REGION_ARCHIVE_PATTERN = /^(?:spb-[\w.-]+|region-[a-f\d-]{36})\.pmtiles$/
 
 function validBounds(bounds) {
   return Array.isArray(bounds) && bounds.length === 4
     && bounds.every((coordinate) => Number.isFinite(coordinate))
-    && bounds[0] >= -180 && bounds[0] < bounds[2] && bounds[2] <= 180
-    && bounds[1] >= -85 && bounds[1] < bounds[3] && bounds[3] <= 85
+    && bounds[0] >= REGION_COORDINATE_LIMITS.longitudeDegrees.minimum
+    && bounds[0] < bounds[2]
+    && bounds[2] <= REGION_COORDINATE_LIMITS.longitudeDegrees.maximum
+    && bounds[1] >= REGION_COORDINATE_LIMITS.webMercatorLatitudeDegrees.minimum
+    && bounds[1] < bounds[3]
+    && bounds[3] <= REGION_COORDINATE_LIMITS.webMercatorLatitudeDegrees.maximum
 }
 
 function normalizedName(value) {
@@ -29,7 +36,7 @@ function normalizedName(value) {
     throw new ClientInputError('Region name is required')
   }
 
-  if (Array.from(name).length > MAX_REGION_NAME_LENGTH || /[\u0000-\u001f\u007f-\u009f]/u.test(name)) {
+  if (Array.from(name).length > MAX_REGION_NAME_LENGTH || !PRINTABLE_REGION_NAME_PATTERN.test(name)) {
     throw new ClientInputError(`Region name must contain at most ${MAX_REGION_NAME_LENGTH} printable characters`)
   }
 
@@ -46,7 +53,7 @@ export function validateRegionSelection(value, limits) {
   }
 
   if (value.maxZoom > limits.maxZoom) {
-    throw new ClientInputError('Map zoom level exceeds the configured limit', 422)
+    throw new ClientInputError('Map zoom level exceeds the configured limit', HttpStatus.UNPROCESSABLE_CONTENT)
   }
 
   const selection = { name: normalizedName(value.name), bounds: value.bounds, maxZoom: value.maxZoom }
@@ -56,13 +63,18 @@ export function validateRegionSelection(value, limits) {
 
 export function estimateRegionSize({ bounds, maxZoom }) {
   const [west, south, east, north] = bounds
+  const longitudeOffsetDegrees = REGION_COORDINATE_LIMITS.longitudeDegrees.maximum
+  const longitudeRangeDegrees = longitudeOffsetDegrees - REGION_COORDINATE_LIMITS.longitudeDegrees.minimum
   let estimated = 0
 
   for (let zoom = 0; zoom <= maxZoom; zoom += 1) {
     const scale = 2 ** zoom
-    const xForLongitude = (longitude) => Math.min(scale - 1, Math.max(0, Math.floor((longitude + 180) / 360 * scale)))
+    const xForLongitude = (longitude) => Math.min(
+      scale - 1,
+      Math.max(0, Math.floor((longitude + longitudeOffsetDegrees) / longitudeRangeDegrees * scale)),
+    )
     const yForLatitude = (latitude) => {
-      const radians = latitude * Math.PI / 180
+      const radians = latitude * Math.PI / longitudeOffsetDegrees
       const projected = (1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians)) / Math.PI) / 2
       return Math.min(scale - 1, Math.max(0, Math.floor(projected * scale)))
     }
@@ -238,7 +250,7 @@ export async function findInstalledRegion({ id, registryPath, mapsDir }) {
   }
 
   const expectedFile = CUSTOM_REGION_ID_PATTERN.test(id) ? regionArchiveName(id) : region.file
-  if (region.file !== expectedFile || !/^(?:spb-[\w.-]+|region-[a-f\d-]{36})\.pmtiles$/.test(region.file)) {
+  if (region.file !== expectedFile || !MANAGED_REGION_ARCHIVE_PATTERN.test(region.file)) {
     return null
   }
 

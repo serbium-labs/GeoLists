@@ -1,12 +1,14 @@
 import type { StyleSpecification } from 'maplibre-gl'
+import { APP_CONFIG } from './appConfig'
 
 const SOURCE_ID = 'protomaps'
+const DEFAULT_LOCAL_ARCHIVE_URL = APP_CONFIG.map.localArchiveUrl
 
 /**
  * Offline-only style: every URL is same-origin. The preparation script installs
  * the Cyrillic/Latin Noto Sans glyph ranges used by the label layers.
  */
-export function createLocalStyle(revision?: string, localArchiveUrl = '/maps/spb.pmtiles'): StyleSpecification {
+export function createLocalStyle(revision?: string, localArchiveUrl = DEFAULT_LOCAL_ARCHIVE_URL): StyleSpecification {
   const archiveUrl = revision ? `${localArchiveUrl}?v=${encodeURIComponent(revision)}` : localArchiveUrl
   return {
     version: 8,

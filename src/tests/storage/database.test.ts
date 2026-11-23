@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GeoListsDatabase, GeoListsRepository } from './database'
-import { createMapData, parseMapData } from '../exchange/mapdata'
+import { createMapData, parseMapData } from '../../exchange/mapdata'
+import { GeoListsDatabase, GeoListsRepository } from '../../storage/database'
 
 const validPoint = {
   name: 'Склад',
