@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatMapSize, MAP_UPDATE_POLL_INTERVAL_MS } from './MapUpdates'
+import { formatMapSize, MAP_UPDATE_POLL_INTERVAL_MS } from '../../components/MapUpdates'
 
 describe('map update presentation', () => {
   it('formats manifest and download sizes for the interface', () => {

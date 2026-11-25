@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAPLIBRE_WORKER_REVISION, versionMapLibreWorkerUrl } from './mapWorker'
+import { MAPLIBRE_WORKER_REVISION, versionMapLibreWorkerUrl } from '../../config/mapWorker'
 
 describe('MapLibre worker URL', () => {
   it('changes the cache key after the production MIME migration', () => {

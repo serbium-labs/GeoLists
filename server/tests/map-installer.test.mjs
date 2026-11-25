@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { installMapArchive } from './map-installer.mjs'
+import { installMapArchive } from '../map-installer.mjs'
 
 const temporaryDirectories = []
 afterEach(async () => Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true }))))
@@ -81,7 +81,7 @@ describe('safe map installation', () => {
       mapsDir,
       pointerPath,
       fetchImpl: async () => archiveResponse(archive),
-    })).rejects.toThrow('Размер архива')
+    })).rejects.toThrow('Archive size')
   })
 
   it('reports an HTTP download failure without activating an archive', async () => {
@@ -104,7 +104,7 @@ describe('safe map installation', () => {
       mapsDir,
       pointerPath,
       fetchImpl: async () => response,
-    })).rejects.toThrow('небезопасный URL')
+    })).rejects.toThrow('insecure URL')
   })
 
   it('rejects a correctly hashed file that is not PMTiles v3', async () => {

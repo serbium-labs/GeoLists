@@ -24,14 +24,14 @@ export class GeoListsDatabase extends Dexie {
 export class GeoListsRepository {
   constructor(readonly db: GeoListsDatabase) {}
 
-  async getLists() {
+  async getLists(): Promise<MapList[]> {
     return this.db.lists.orderBy('createdAt').toArray()
   }
 
   async getListsWithPointCounts(): Promise<ListsWithPointCounts> {
     return this.db.transaction('r', this.db.lists, this.db.points, async () => {
-      const lists = await this.getLists()
-      const pointCounts = Object.fromEntries(lists.map((list) => [list.id, 0])) as Record<string, number>
+      const lists: MapList[] = await this.getLists()
+      const pointCounts: Record<string, number> = Object.fromEntries(lists.map((list: MapList) => [list.id, 0]))
 
       await this.db.points.orderBy('listId').eachKey((listId) => {
         if (typeof listId === 'string' && Object.hasOwn(pointCounts, listId)) {
@@ -43,65 +43,77 @@ export class GeoListsRepository {
     })
   }
 
-  async getPoints(listId: string) {
+  async getPoints(listId: string): Promise<MapPoint[]> {
     return this.db.points.where('listId').equals(listId).sortBy('createdAt')
   }
 
-  async createList(name: string) {
-    const now = new Date().toISOString()
+  async createList(name: string): Promise<MapList> {
+    const now: string = new Date().toISOString()
     const list: MapList = { id: crypto.randomUUID(), name: validateListName(name), createdAt: now, updatedAt: now }
     await this.db.lists.add(list)
     return list
   }
 
-  async renameList(id: string, name: string) {
-    const list = await this.db.lists.get(id)
-    if (!list) throw new Error('List not found.')
-    const updated = { ...list, name: validateListName(name), updatedAt: new Date().toISOString() }
+  async renameList(id: string, name: string): Promise<MapList> {
+    const list: MapList | undefined = await this.db.lists.get(id)
+    if (!list) {
+      throw new Error('List not found.')
+    }
+    const updated: MapList = { ...list, name: validateListName(name), updatedAt: new Date().toISOString() }
     await this.db.lists.put(updated)
     return updated
   }
 
-  async deleteList(id: string) {
+  async deleteList(id: string): Promise<void> {
     await this.db.transaction('rw', this.db.lists, this.db.points, async () => {
-      if (!(await this.db.lists.get(id))) throw new Error('List not found.')
+      if (!(await this.db.lists.get(id))) {
+        throw new Error('List not found.')
+      }
       await this.db.points.where('listId').equals(id).delete()
       await this.db.lists.delete(id)
     })
   }
 
-  async createPoint(listId: string, input: PointFields) {
-    const values = validatePointFields(input)
-    const now = new Date().toISOString()
+  async createPoint(listId: string, input: PointFields): Promise<MapPoint> {
+    const values: PointFields = validatePointFields(input)
+    const now: string = new Date().toISOString()
     const point: MapPoint = { ...values, id: crypto.randomUUID(), listId, createdAt: now, updatedAt: now }
     await this.db.transaction('rw', this.db.lists, this.db.points, async () => {
-      if (!(await this.db.lists.get(listId))) throw new Error('The active list no longer exists.')
+      if (!(await this.db.lists.get(listId))) {
+        throw new Error('The active list no longer exists.')
+      }
       await this.db.points.add(point)
     })
     return point
   }
 
-  async updatePoint(listId: string, id: string, input: PointFields) {
-    const values = validatePointFields(input)
+  async updatePoint(listId: string, id: string, input: PointFields): Promise<MapPoint> {
+    const values: PointFields = validatePointFields(input)
     return this.db.transaction('rw', this.db.lists, this.db.points, async () => {
-      if (!(await this.db.lists.get(listId))) throw new Error('The active list no longer exists.')
-      const point = await this.db.points.get(id)
-      if (!point || point.listId !== listId) throw new Error('The point does not belong to the active list.')
+      if (!(await this.db.lists.get(listId))) {
+        throw new Error('The active list no longer exists.')
+      }
+      const point: MapPoint | undefined = await this.db.points.get(id)
+      if (!point || point.listId !== listId) {
+        throw new Error('The point does not belong to the active list.')
+      }
       const updated: MapPoint = { ...point, ...values, updatedAt: new Date().toISOString() }
       await this.db.points.put(updated)
       return updated
     })
   }
 
-  async deletePoint(listId: string, id: string) {
+  async deletePoint(listId: string, id: string): Promise<void> {
     await this.db.transaction('rw', this.db.points, async () => {
-      const point = await this.db.points.get(id)
-      if (!point || point.listId !== listId) throw new Error('The point does not belong to the active list.')
+      const point: MapPoint | undefined = await this.db.points.get(id)
+      if (!point || point.listId !== listId) {
+        throw new Error('The point does not belong to the active list.')
+      }
       await this.db.points.delete(id)
     })
   }
 
-  async importMapData(data: MapDataContent) {
+  async importMapData(data: MapDataContent): Promise<MapList> {
     const list: MapList = { ...data.list, id: crypto.randomUUID(), name: validateListName(data.list.name) }
     const points: MapPoint[] = data.points.map((point) => ({
       ...point,

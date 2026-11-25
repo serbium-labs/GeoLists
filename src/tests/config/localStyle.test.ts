@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createLocalStyle } from './localStyle'
+import { createLocalStyle } from '../../config/localStyle'
 
 afterEach(() => vi.unstubAllGlobals())
 

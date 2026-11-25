@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
+import { APP_CONFIG } from '../../config/appConfig'
 import type { MapBounds, MapViewport, OfflineRegion } from '../../types/map'
+import { isNull, isPresent } from '../../utils/nullish'
 import { formatMapSize } from '../MapUpdates'
 
-const MAP_MUTATION_HEADERS = { 'content-type': 'application/json', 'x-geolists-csrf': '1' }
 const DEFAULT_MAX_ZOOM = 15
 
 type RegionOperation = {
@@ -25,7 +26,8 @@ interface Props {
 }
 
 async function responseJson<T>(response: Response): Promise<T> {
-  const value = await response.json() as T & { error?: string }
+  const value: T & { error?: string } = await response.json() as T & { error?: string }
+
   if (!response.ok) {
     throw new Error(value.error || `Region API returned HTTP ${response.status}`)
   }
@@ -35,6 +37,15 @@ async function responseJson<T>(response: Response): Promise<T> {
 
 function boundsLabel(bounds: MapBounds): string {
   return bounds.map((coordinate) => coordinate.toFixed(3)).join(', ')
+}
+
+function isRegionDownloadDisabled(
+  selection: MapViewport | null,
+  estimatedSize: number | null,
+  busy: boolean,
+  operationPhase: RegionOperation['phase'] | undefined,
+): boolean {
+  return !selection || isNull(estimatedSize) || busy || operationPhase === 'extracting'
 }
 
 export function OfflineRegions({ viewport, onActiveRegion, onRegionActivated }: Props): ReactElement {
@@ -48,10 +59,14 @@ export function OfflineRegions({ viewport, onActiveRegion, onRegionActivated }: 
   const previousOperationPhase = useRef<RegionOperation['phase']>('idle')
 
   const refresh = useCallback(async (): Promise<RegionStatus> => {
-    const next = await responseJson<RegionStatus>(await fetch('/api/regions', { cache: 'no-store' }))
+    const next: RegionStatus = await responseJson<RegionStatus>(await fetch(APP_CONFIG.api.regions, { cache: 'no-store' }))
+
     setStatus(next)
-    const active = next.regions.find((region) => region.id === next.activeId) || null
+
+    const active: OfflineRegion | null = next.regions.find((region: OfflineRegion): boolean => region.id === next.activeId) || null
+
     onActiveRegion(active)
+
     if (active && previousOperationPhase.current === 'extracting' && next.operation.phase === 'complete') {
       onRegionActivated(active)
     }
@@ -68,13 +83,13 @@ export function OfflineRegions({ viewport, onActiveRegion, onRegionActivated }: 
       return
     }
 
-    const timer = window.setInterval(() => void refresh().catch((error: unknown) => {
+    const timer: number = window.setInterval(() => void refresh().catch((error: unknown) => {
       setMessage(error instanceof Error ? error.message : 'Failed to refresh region status')
     }), 1_000)
     return () => window.clearInterval(timer)
   }, [refresh, status?.operation.phase])
 
-  const estimate = async (nextSelection = selection): Promise<void> => {
+  const estimate = async (nextSelection: MapViewport | null = selection): Promise<void> => {
     if (!nextSelection) {
       setMessage('Move the map to the required area, then select the current view.')
       return
@@ -83,9 +98,9 @@ export function OfflineRegions({ viewport, onActiveRegion, onRegionActivated }: 
     setBusy(true)
     setMessage('')
     try {
-      const value = await responseJson<{ estimatedSize: number }>(await fetch('/api/regions/estimate', {
+      const value: { estimatedSize: number } = await responseJson<{ estimatedSize: number }>(await fetch(APP_CONFIG.api.regionEstimate, {
         method: 'POST',
-        headers: MAP_MUTATION_HEADERS,
+        headers: APP_CONFIG.mutationHeaders,
         body: JSON.stringify({ name, bounds: nextSelection.bounds, maxZoom }),
       }))
       setEstimatedSize(value.estimatedSize)
@@ -109,7 +124,7 @@ export function OfflineRegions({ viewport, onActiveRegion, onRegionActivated }: 
   }
 
   const download = async (): Promise<void> => {
-    if (!selection || estimatedSize === null) {
+    if (!selection || isNull(estimatedSize)) {
       setMessage('Select and estimate a region before downloading.')
       return
     }
@@ -117,9 +132,9 @@ export function OfflineRegions({ viewport, onActiveRegion, onRegionActivated }: 
     setBusy(true)
     setMessage('')
     try {
-      await responseJson(await fetch('/api/regions/download', {
+      await responseJson(await fetch(APP_CONFIG.api.regionDownload, {
         method: 'POST',
-        headers: MAP_MUTATION_HEADERS,
+        headers: APP_CONFIG.mutationHeaders,
         body: JSON.stringify({ name, bounds: selection.bounds, maxZoom }),
       }))
       await refresh()
@@ -134,9 +149,9 @@ export function OfflineRegions({ viewport, onActiveRegion, onRegionActivated }: 
     setBusy(true)
     setMessage('')
     try {
-      const value = await responseJson<{ active: OfflineRegion }>(await fetch('/api/regions/activate', {
+      const value: { active: OfflineRegion } = await responseJson<{ active: OfflineRegion }>(await fetch(APP_CONFIG.api.regionActivate, {
         method: 'POST',
-        headers: MAP_MUTATION_HEADERS,
+        headers: APP_CONFIG.mutationHeaders,
         body: JSON.stringify({ id }),
       }))
       onActiveRegion(value.active)
@@ -150,7 +165,7 @@ export function OfflineRegions({ viewport, onActiveRegion, onRegionActivated }: 
   }
 
   const cancel = async (): Promise<void> => {
-    await responseJson(await fetch('/api/regions/cancel', { method: 'POST', headers: MAP_MUTATION_HEADERS, body: '{}' }))
+    await responseJson(await fetch(APP_CONFIG.api.regionCancel, { method: 'POST', headers: APP_CONFIG.mutationHeaders, body: '{}' }))
     await refresh()
   }
 
@@ -160,8 +175,15 @@ export function OfflineRegions({ viewport, onActiveRegion, onRegionActivated }: 
     {selection && <p className="region-bounds">Selected bounds: {boundsLabel(selection.bounds)}</p>}
     <label>Region name<input value={name} maxLength={80} onChange={(event) => setName(event.target.value)} /></label>
     <label>Maximum zoom<input type="number" min={0} max={15} value={maxZoom} onChange={(event) => { setMaxZoom(Number(event.target.value)); setEstimatedSize(null) }} /></label>
-    <div className="region-actions"><button type="button" disabled={!selection || busy} onClick={() => void estimate()}>Estimate</button><button type="button" disabled={!selection || estimatedSize === null || busy || status?.operation.phase === 'extracting'} onClick={() => void download()}>Download</button></div>
-    {estimatedSize !== null && <p className="region-estimate" role="status">Estimated download: {formatMapSize(estimatedSize)}</p>}
+    <div className="region-actions">
+      <button type="button" disabled={!selection || busy} onClick={() => void estimate()}>Estimate</button>
+      <button
+        type="button"
+        disabled={isRegionDownloadDisabled(selection, estimatedSize, busy, status?.operation.phase)}
+        onClick={() => void download()}
+      >Download</button>
+    </div>
+    {isPresent(estimatedSize) && <p className="region-estimate" role="status">Estimated download: {formatMapSize(estimatedSize)}</p>}
     {status?.operation.phase === 'extracting' && <div className="region-operation" role="status"><span>Preparing {status.operation.region}…</span><button type="button" onClick={() => void cancel()}>Cancel</button></div>}
     {status?.operation.phase === 'failed' && <p className="form-error" role="alert">{status.operation.error}</p>}
     {message && <p className="form-error" role="alert">{message}</p>}

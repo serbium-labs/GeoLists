@@ -22,7 +22,7 @@ WORKDIR /app
 
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=pmtiles-build /go/bin/go-pmtiles /usr/local/bin/pmtiles
-COPY --chown=node:node server/map-server.mjs server/http-utils.mjs server/map-installer.mjs server/map-update-utils.mjs server/server-config.mjs server/map-api-security.mjs server/map-cache-policy.mjs server/map-storage.mjs server/map-regions.mjs server/reverse-geocoding.mjs ./server/
+COPY --chown=node:node server/map-server.mjs server/http-utils.mjs server/map-installer.mjs server/map-update-utils.mjs server/server-config.mjs server/map-api-security.mjs server/map-cache-policy.mjs server/map-storage.mjs server/map-regions.mjs server/reverse-geocoding.mjs server/api-errors.mjs ./server/
 COPY --chown=node:node config ./config
 RUN mkdir -p /app/data/maps && chown -R node:node /app/data
 

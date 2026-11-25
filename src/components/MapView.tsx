@@ -2,15 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import {
   GeoJSONSource,
+  Map,
   NavigationControl,
-  type Map as MapLibreMap,
   type MapGeoJSONFeature,
   type MapLayerMouseEvent,
 } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { getMapStyle, inspectLocalArchive, localArchiveErrorMessage } from '../config/mapSources'
+import { getMapStyle, inspectLocalArchive, localArchiveErrorMessage, type LocalArchiveStatus } from '../config/mapSources'
 import {
   beginMapSourceSwitch,
   completeMapSourceSwitch,
@@ -22,6 +22,7 @@ import {
 import { versionMapLibreWorkerUrl } from '../config/mapWorker'
 import type { MapPoint } from '../types/data'
 import type { Coordinates, MapSourceMode, MapViewport, OfflineRegion } from '../types/map'
+import { isUndefined } from '../utils/nullish'
 import {
   createMapPointData,
   MAP_CLUSTER_COUNT_LAYER_ID,
@@ -38,6 +39,8 @@ const DEFAULT_ZOOM = 2
 const STYLE_LOAD_TIMEOUT_MS = 15_000
 const POINT_SELECTION_ZOOM = 15
 const MAX_CLUSTER_EXPANSION_ZOOM = 20
+// Cap automatic region fitting at MapLibre logical zoom level 12 so the selected area remains visible with context.
+const REGION_FIT_MAX_ZOOM_LEVEL = 12
 const CLUSTER_COLOR = '#1c6d4e'
 const SELECTED_POINT_COLOR = '#a2362c'
 const POINT_STROKE_COLOR = '#ffffff'
@@ -54,6 +57,9 @@ const POINT_INTERACTION_LAYER_IDS = [MAP_POINT_LAYER_ID, MAP_SELECTED_POINT_LAYE
 const CLUSTER_INTERACTION_LAYER_IDS = [MAP_CLUSTER_LAYER_ID, MAP_CLUSTER_COUNT_LAYER_ID]
 maplibregl.setWorkerUrl(versionMapLibreWorkerUrl(maplibreWorkerUrl))
 const EMPTY_STYLE = { version: 8 as const, sources: {}, layers: [{ id: 'unavailable', type: 'background' as const, paint: { 'background-color': '#e5e9e4' } }] }
+
+type MapLibreMap = Map
+type TMapProps = ConstructorParameters<typeof Map>[0]
 
 interface Props {
   requestedMode: MapSourceMode
@@ -144,8 +150,9 @@ function syncPointLayers(map: MapLibreMap, points: MapPoint[], selectedPointId: 
     return
   }
 
-  const data = createMapPointData(points, selectedPointId)
-  const existingSource = map.getSource(MAP_POINT_SOURCE_ID)
+  const data: ReturnType<typeof createMapPointData> = createMapPointData(points, selectedPointId)
+  const existingSource: ReturnType<MapLibreMap['getSource']> = map.getSource(MAP_POINT_SOURCE_ID)
+
   if (existingSource) {
     const pointSource = existingSource as GeoJSONSource
     pointSource.setData(data)
@@ -167,6 +174,26 @@ function pointCoordinates(feature: MapGeoJSONFeature): [number, number] | null {
 
   const [longitude, latitude] = feature.geometry.coordinates
   return Number.isFinite(longitude) && Number.isFinite(latitude) ? [longitude, latitude] : null
+}
+
+type ClusterSelection = {
+  center: [number, number] | null
+  clusterId: unknown
+  source: unknown
+}
+
+type ValidClusterSelection = {
+  center: [number, number]
+  clusterId: number
+  source: GeoJSONSource
+}
+
+function isValidClusterSelection(selection: ClusterSelection): selection is ValidClusterSelection {
+  return Boolean(
+    selection.center
+    && Number.isSafeInteger(selection.clusterId)
+    && selection.source instanceof GeoJSONSource,
+  )
 }
 
 export function MapView({ requestedMode, mapRevision, activeRegion, points, activeListId, focusedPoint, onMapClick, onPointOpen, onRequestOnline, onSourceStateChange, onViewportChange }: Props) {
@@ -191,18 +218,53 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
   useEffect(() => { onSourceStateChangeRef.current = onSourceStateChange }, [onSourceStateChange])
   useEffect(() => { onViewportChangeRef.current = onViewportChange }, [onViewportChange])
   useEffect(() => {
-    const protocol = new Protocol()
+    const protocol: Protocol = new Protocol()
+
     maplibregl.addProtocol('pmtiles', protocol.tile)
+
     return () => maplibregl.removeProtocol('pmtiles')
   }, [])
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
-    const map = new maplibregl.Map({ container: containerRef.current, style: EMPTY_STYLE, center: activeRegion?.center ?? DEFAULT_CENTER, zoom: activeRegion ? Math.min(activeRegion.maxZoom, 11) : DEFAULT_ZOOM, attributionControl: { compact: true }, locale: { 'NavigationControl.ZoomIn': 'Zoom in', 'NavigationControl.ZoomOut': 'Zoom out', 'NavigationControl.ResetBearing': 'Reset bearing' } })
+    if (!containerRef.current || mapRef.current) {
+      return
+    }
+
+    let map: MapLibreMap
+    try {
+      const mapProps: TMapProps = {
+        container: containerRef.current,
+        style: EMPTY_STYLE,
+        center: activeRegion?.center ?? DEFAULT_CENTER,
+        zoom: activeRegion ? Math.min(activeRegion.maxZoom, 11) : DEFAULT_ZOOM,
+        attributionControl: { compact: true },
+        locale: {
+          'NavigationControl.ZoomIn': 'Zoom in',
+          'NavigationControl.ZoomOut': 'Zoom out',
+          'NavigationControl.ResetBearing': 'Reset bearing',
+        },
+      }
+
+      map = new Map(mapProps)
+    } catch {
+      const failed: MapSourceState = failMapSourceSwitch(
+        sourceStateRef.current,
+        sourceStateRef.current.requestId,
+        'The map requires WebGL2, which is unavailable in this browser or environment.',
+      )
+      sourceStateRef.current = failed
+      setSourceState(failed)
+      onSourceStateChangeRef.current(failed)
+      return
+    }
+
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right')
     map.on('click', POINT_INTERACTION_LAYER_IDS, (event: MapLayerMouseEvent) => {
-      const pointId = event.features?.[0]?.properties?.id
-      const point = typeof pointId === 'string' ? pointsRef.current.find((candidate) => candidate.id === pointId) : null
+      const pointId: unknown = event.features?.[0]?.properties?.id
+      const point: MapPoint | null = typeof pointId === 'string'
+        ? pointsRef.current.find((candidate: MapPoint): boolean => candidate.id === pointId) ?? null
+        : null
+
       if (!point) {
         return
       }
@@ -211,19 +273,21 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
       onPointOpenRef.current(point)
     })
     map.on('click', CLUSTER_INTERACTION_LAYER_IDS, (event: MapLayerMouseEvent) => {
-      const feature = event.features?.[0]
-      const clusterId = feature?.properties?.cluster_id
-      const center = feature ? pointCoordinates(feature) : null
-      const source = map.getSource(MAP_POINT_SOURCE_ID)
-      if (!center || !Number.isSafeInteger(clusterId) || !(source instanceof GeoJSONSource)) {
+      const feature: MapGeoJSONFeature | undefined = event.features?.[0]
+      const clusterId: unknown = feature?.properties?.cluster_id
+      const center: [number, number] | null = feature ? pointCoordinates(feature) : null
+      const source: unknown = map.getSource(MAP_POINT_SOURCE_ID)
+      const selection: ClusterSelection = { center, clusterId, source }
+
+      if (!isValidClusterSelection(selection)) {
         return
       }
 
       event.preventDefault()
-      void source.getClusterExpansionZoom(clusterId).then((zoom) => {
-        map.easeTo({ center, zoom: Math.min(zoom, MAX_CLUSTER_EXPANSION_ZOOM) })
+      void selection.source.getClusterExpansionZoom(selection.clusterId).then((zoom: number) => {
+        map.easeTo({ center: selection.center, zoom: Math.min(zoom, MAX_CLUSTER_EXPANSION_ZOOM) })
       }).catch(() => {
-        map.easeTo({ center, zoom: Math.min(map.getZoom() + 2, MAX_CLUSTER_EXPANSION_ZOOM) })
+        map.easeTo({ center: selection.center, zoom: Math.min(map.getZoom() + 2, MAX_CLUSTER_EXPANSION_ZOOM) })
       })
     })
     map.on('click', (event) => {
@@ -242,7 +306,8 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
     const syncCurrentPoints = (): void => syncPointLayers(map, pointsRef.current, focusedPointIdRef.current)
     map.on('style.load', syncCurrentPoints)
     const reportViewport = (): void => {
-      const bounds = map.getBounds()
+      const bounds: ReturnType<MapLibreMap['getBounds']> = map.getBounds()
+
       onViewportChangeRef.current({
         bounds: [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()],
         zoom: map.getZoom(),
@@ -258,31 +323,33 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
   }, [])
 
   useEffect(() => {
-    const map = mapRef.current
+    const map: MapLibreMap | null = mapRef.current
+
     if (!map) {
       return
     }
     const currentMap: MapLibreMap = map
-    const started = beginMapSourceSwitch(sourceStateRef.current, requestedMode, mapRevision)
+    const started: MapSourceState = beginMapSourceSwitch(sourceStateRef.current, requestedMode, mapRevision)
+
     sourceStateRef.current = started
     setSourceState(started)
     onSourceStateChangeRef.current(started)
     if (isMapSourceActive(started, requestedMode, mapRevision)) {
-      const completed = completeMapSourceSwitch(started, started.requestId)
+      const completed: MapSourceState = completeMapSourceSwitch(started, started.requestId)
       sourceStateRef.current = completed
       setSourceState(completed)
       onSourceStateChangeRef.current(completed)
       return
     }
 
-    const requestId = started.requestId
-    const controller = new AbortController()
+    const requestId: number = started.requestId
+    const controller: AbortController = new AbortController()
     let styleLoadTimer: number | undefined
-    let listeningForStyle = false
-    let disposed = false
+    let listeningForStyle: boolean = false
+    let disposed: boolean = false
 
     const stopWaitingForStyle = (): void => {
-      if (styleLoadTimer !== undefined) {
+      if (!isUndefined(styleLoadTimer)) {
         window.clearTimeout(styleLoadTimer)
       }
       if (listeningForStyle) {
@@ -293,7 +360,8 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
     }
 
     const restoreActiveStyle = (): void => {
-      const fallbackStyle = activeStyleRef.current
+      const fallbackStyle: ReturnType<MapLibreMap['getStyle']> | null = activeStyleRef.current
+
       currentMap.setStyle(fallbackStyle ?? EMPTY_STYLE)
     }
 
@@ -301,7 +369,8 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
       if (disposed) {
         return
       }
-      const failed = failMapSourceSwitch(sourceStateRef.current, requestId, message)
+      const failed: MapSourceState = failMapSourceSwitch(sourceStateRef.current, requestId, message)
+
       if (failed === sourceStateRef.current) {
         return
       }
@@ -316,7 +385,8 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
       if (disposed) {
         return
       }
-      const completed = completeMapSourceSwitch(sourceStateRef.current, requestId)
+      const completed: MapSourceState = completeMapSourceSwitch(sourceStateRef.current, requestId)
+
       if (completed === sourceStateRef.current) {
         return
       }
@@ -329,7 +399,7 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
 
     const applySource = async (): Promise<void> => {
       if (requestedMode === 'local') {
-        const archive = await inspectLocalArchive(controller.signal, mapRevision, activeRegion?.url)
+        const archive: LocalArchiveStatus = await inspectLocalArchive(controller.signal, mapRevision, activeRegion?.url)
         if (!archive.available) {
           fail(localArchiveErrorMessage(archive))
           return
@@ -339,7 +409,7 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
         listeningForStyle = true
         currentMap.on('style.load', handleStyleLoad)
         styleLoadTimer = window.setTimeout(() => {
-          const message = requestedMode === 'online'
+          const message: string = requestedMode === 'online'
             ? 'The online map failed to load. Check your internet connection and access to OpenFreeMap.'
             : 'The local map could not be displayed. Check the PMTiles archive and local server.'
           fail(message)
@@ -366,11 +436,15 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
     }
 
     const [west, south, east, north] = activeRegion.bounds
-    mapRef.current.fitBounds([[west, south], [east, north]], { padding: 40, maxZoom: Math.min(activeRegion.maxZoom, 12) })
+    mapRef.current.fitBounds([[west, south], [east, north]], {
+      padding: 40,
+      maxZoom: Math.min(activeRegion.maxZoom, REGION_FIT_MAX_ZOOM_LEVEL),
+    })
   }, [activeRegion?.id])
 
   useEffect(() => {
-    const map = mapRef.current
+    const map: MapLibreMap | null = mapRef.current
+
     if (!map) {
       return
     }
@@ -379,7 +453,9 @@ export function MapView({ requestedMode, mapRevision, activeRegion, points, acti
   }, [points, activeListId, focusedPoint?.id])
 
   useEffect(() => {
-    if (!focusedPoint || !mapRef.current) return
+    if (!focusedPoint || !mapRef.current) {
+      return
+    }
     mapRef.current.flyTo({ center: [focusedPoint.longitude, focusedPoint.latitude], zoom: Math.max(mapRef.current.getZoom(), POINT_SELECTION_ZOOM) })
   }, [focusedPoint])
 

@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { contentTypeFor, parseByteRange, resolveStaticFile } from './http-utils.mjs'
+import { contentTypeFor, parseByteRange, resolveStaticFile } from '../http-utils.mjs'
 
 describe('production HTTP helpers', () => {
   it('serves Vite module workers as JavaScript', () => {

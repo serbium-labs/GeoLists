@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { httpHost } from './server-config.mjs'
+import { httpHost } from '../server-config.mjs'
 
 describe('httpHost', () => {
   it('binds only to loopback by default', () => {

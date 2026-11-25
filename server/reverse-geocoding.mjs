@@ -1,8 +1,11 @@
+import { HttpStatus, REGION_COORDINATE_LIMITS } from './server-config.mjs'
+
 const REQUEST_TIMEOUT_MS = 10_000
 const MINIMUM_REQUEST_INTERVAL_MS = 1_000
 const ADDRESS_MAX_LENGTH = 500
 const MAXIMUM_CACHED_RESULTS = 500
 const NOMINATIM_USER_AGENT = 'GeoLists/0.1 (+https://github.com/serbium-labs/GeoLists)'
+const PRINTABLE_ADDRESS_PATTERN = /^[^\u0000-\u001f\u007f-\u009f]*$/u
 
 export const GEOCODING_SOURCE = {
   label: '© OpenStreetMap contributors',
@@ -10,7 +13,7 @@ export const GEOCODING_SOURCE = {
 }
 
 export class ReverseGeocodingError extends Error {
-  constructor(message, status = 502) {
+  constructor(message, status = HttpStatus.BAD_GATEWAY) {
     super(message)
     this.name = 'ReverseGeocodingError'
     this.status = status
@@ -41,13 +44,24 @@ function validCoordinate(value, minimum, maximum) {
   return typeof value === 'number' && Number.isFinite(value) && value >= minimum && value <= maximum
 }
 
+function isValidAddress(address) {
+  if (!address) {
+    return false
+  }
+
+  const withinLengthLimit = Array.from(address).length <= ADDRESS_MAX_LENGTH
+  const containsOnlyPrintableCharacters = PRINTABLE_ADDRESS_PATTERN.test(address)
+
+  return withinLengthLimit && containsOnlyPrintableCharacters
+}
+
 function normalizedAddress(value) {
   if (typeof value !== 'string') {
     return null
   }
 
   const address = value.normalize('NFC').trim()
-  if (!address || Array.from(address).length > ADDRESS_MAX_LENGTH || /[\u0000-\u001f\u007f-\u009f]/u.test(address)) {
+  if (!isValidAddress(address)) {
     return null
   }
 
@@ -59,8 +73,19 @@ export function createReverseGeocoder({ endpoint, fetchImpl = fetch, now = Date.
   const resultCache = new Map()
 
   return async function reverseGeocode({ latitude, longitude, signal }) {
-    if (!validCoordinate(latitude, -90, 90) || !validCoordinate(longitude, -180, 180)) {
-      throw new ReverseGeocodingError('Valid latitude and longitude are required', 400)
+    const validLatitude = validCoordinate(
+      latitude,
+      REGION_COORDINATE_LIMITS.latitudeDegrees.minimum,
+      REGION_COORDINATE_LIMITS.latitudeDegrees.maximum,
+    )
+    const validLongitude = validCoordinate(
+      longitude,
+      REGION_COORDINATE_LIMITS.longitudeDegrees.minimum,
+      REGION_COORDINATE_LIMITS.longitudeDegrees.maximum,
+    )
+
+    if (!validLatitude || !validLongitude) {
+      throw new ReverseGeocodingError('Valid latitude and longitude are required', HttpStatus.BAD_REQUEST)
     }
 
     const cacheKey = `${latitude},${longitude}`
@@ -70,7 +95,7 @@ export function createReverseGeocoder({ endpoint, fetchImpl = fetch, now = Date.
 
     const currentTime = now()
     if (currentTime - lastRequestStartedAt < MINIMUM_REQUEST_INTERVAL_MS) {
-      throw new ReverseGeocodingError('Please wait before requesting another address', 429)
+      throw new ReverseGeocodingError('Please wait before requesting another address', HttpStatus.TOO_MANY_REQUESTS)
     }
     lastRequestStartedAt = currentTime
 
@@ -95,12 +120,12 @@ export function createReverseGeocoder({ endpoint, fetchImpl = fetch, now = Date.
         if (signal) {
           throw error
         }
-        throw new ReverseGeocodingError('The address service timed out', 504)
+        throw new ReverseGeocodingError('The address service timed out', HttpStatus.GATEWAY_TIMEOUT)
       }
       throw new ReverseGeocodingError('The address service is unavailable')
     }
 
-    if (response.status === 404) {
+    if (response.status === HttpStatus.NOT_FOUND) {
       const result = { address: null, source: GEOCODING_SOURCE }
       resultCache.set(cacheKey, result)
       return result

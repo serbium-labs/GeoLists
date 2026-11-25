@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import config from './vite.config'
+import config from '../../vite.config'
 
 describe('Vite map proxy', () => {
   it('forwards the map archive and map API to the GeoLists server', () => {

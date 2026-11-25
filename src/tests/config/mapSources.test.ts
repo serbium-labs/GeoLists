@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { inspectLocalArchive, localArchiveErrorMessage } from './mapSources'
+import { inspectLocalArchive, localArchiveErrorMessage } from '../../config/mapSources'
 
 const controller = () => new AbortController()
 

@@ -1,4 +1,5 @@
 import type { PointFields } from '../types/data'
+import { GEOGRAPHIC_COORDINATE_LIMITS } from '../config/appConfig'
 
 export const TEXT_FIELD_RULES = {
   listName: { label: 'List name', maxLength: 100, required: true, multiline: false },
@@ -11,14 +12,15 @@ export const TEXT_FIELD_RULES = {
 } as const
 
 export const COORDINATE_RULES = {
-  latitude: { label: 'Latitude', minimum: -90, maximum: 90 },
-  longitude: { label: 'Longitude', minimum: -180, maximum: 180 },
+  latitude: { label: 'Latitude', ...GEOGRAPHIC_COORDINATE_LIMITS.latitude },
+  longitude: { label: 'Longitude', ...GEOGRAPHIC_COORDINATE_LIMITS.longitude },
 } as const
 
 type TextFieldRule = (typeof TEXT_FIELD_RULES)[keyof typeof TEXT_FIELD_RULES]
 const INVALID_UNICODE_PATTERN = /[\uD800-\uDFFF]/u
 const SINGLE_LINE_CONTROL_PATTERN = /[\u0000-\u001F\u007F-\u009F]/u
 const MULTILINE_CONTROL_PATTERN = /[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/u
+const WINDOWS_LINE_ENDING_PATTERN = /\r\n?/g
 
 export class ValidationError extends Error {
   constructor(message: string) {
@@ -32,7 +34,7 @@ function characterCount(value: string): number {
 }
 
 function normalizeLineEndings(value: string): string {
-  return value.replace(/\r\n?/g, '\n')
+  return value.replace(WINDOWS_LINE_ENDING_PATTERN, '\n')
 }
 
 function validateCharacters(value: string, rule: TextFieldRule): void {
